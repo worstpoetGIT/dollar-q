@@ -74,8 +74,7 @@ The whole map is made with Three.js and the animations are made with Lenis. It c
 7. Under the Ocean
 8. Basketball Court
 
-<!-- screenshot: map picker -->
-<!-- screenshot: two or three other maps -->
+<p align="center"><img src="docs/screenshots/maps.jpg" alt="The Maps picker, one screenshot per map: Classic City, Lego, Japan, Ice Age, Wireframe, Warzone, Under the Ocean, Basketball Court" width="760"></p>
 
 ### Adding an expense
 
