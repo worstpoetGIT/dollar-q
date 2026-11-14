@@ -56,7 +56,7 @@ On top there are circles which filter the counties:
 
 The whole map is made with Three.js, and the smooth scrolling on the other pages comes from Lenis. The map can be turned any way you like with one finger, zoomed with two fingers, and tapping a county shows a card with **Add** and **History**. The card at the bottom says **"All State"**, *Spending breakdown by county*.
 
-<p align="center"><img src="docs/screenshots/home.jpg" alt="Home page: the state map with grown buildings" width="320"></p>
+<p align="center"><img src="docs/screenshots/home.jpg" alt="Home page on the Wireframe map, with the buildings grown from this month's spending" width="320"></p>
 <!-- screenshot: a county selected, with the bottom card -->
 
 **The buildings grow.** When you add an expense, that county's building doesn't just pop up bigger, it gets constructed slowly, with a crane on the lot. A small amount gets a small upgrade (an empty plot, then a foundation, then a hut, then a proper building, then a fence and a flag). A bigger amount keeps going: extra buildings next to it, then more floors, and there's no maximum height. So the amount I enter decides how big the county gets. At the start of every month, all the counties go back to empty plots.
