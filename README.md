@@ -103,7 +103,7 @@ All the expenditures from the current month and previous months are in the Histo
 4. **Appearance**: System, Light or Dark. Light is all white, Dark is all black.
 5. **Data**: export a backup file and import it back. More on this below.
 
-<!-- screenshot: profile -->
+<p align="center"><img src="docs/screenshots/profile-1.jpg" alt="Profile: accounts, fixed expenses and counties" width="300" align="top">&nbsp;&nbsp;<img src="docs/screenshots/profile-2.jpg" alt="Profile: appearance, backup and reset" width="300" align="top"></p>
 
 ### What's not in the app, on purpose
 
