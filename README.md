@@ -54,7 +54,7 @@ On top there are circles which filter the counties:
 4. Shopping: Fashion, Electronics
 5. Other: whatever is left
 
-The whole map is made with Three.js and the animations are made with Lenis. It can be turned any way you like with one finger, zoomed with two fingers, and tapping a county shows a card with **Add** and **History**. The card at the bottom says **"All State"**, *Spending breakdown by county*.
+The whole map is made with Three.js, and the smooth scrolling on the other pages comes from Lenis. The map can be turned any way you like with one finger, zoomed with two fingers, and tapping a county shows a card with **Add** and **History**. The card at the bottom says **"All State"**, *Spending breakdown by county*.
 
 <p align="center"><img src="docs/screenshots/home.jpg" alt="Home page: the state map with grown buildings" width="320"></p>
 <!-- screenshot: a county selected, with the bottom card -->
@@ -133,6 +133,71 @@ The iPhone file is **not signed**, because Apple only lets you run signed apps a
 
 Only on your phone. If you delete the app, the data goes with it, so use **Profile, Data, Export backup** now and then. It makes a `.json` file you can save to Files or AirDrop to yourself, and **Import backup** brings everything back. Importing asks you before it replaces anything and keeps one undo.
 
+### Tech Stack
+
+| Part | What I used |
+|---|---|
+| UI | React 19, plain JavaScript (no TypeScript, no router, no state library) |
+| Build | Vite 8 |
+| 3D map | Three.js 0.187, used directly (no React wrapper) |
+| Smooth scrolling | Lenis |
+| Styling | One CSS file with CSS variables for the themes, fonts bundled with Fontsource (Archivo Black, Inter) |
+| Phone shell | Capacitor 8, for Android and iPhone |
+| Native plugins | Haptics, Preferences, Filesystem, Share |
+| Storage | `localStorage`, mirrored to native storage (Capacitor Preferences) in the installed app |
+| CI | GitHub Actions: an Ubuntu runner (Java 21, Gradle) builds the APK, a macOS runner (`xcodebuild`) builds the IPA |
+| Targets | Android 7 and up (minSdk 24, target 36), iOS 15 and up |
+
+The whole app is about 3,500 lines. There is no backend and no network code, the app never makes a request.
+
+### How it works
+
+**State and storage.** One small store (`src/store.js`) built on React's `useSyncExternalStore`. The whole app state is a single JSON object saved under the key `dollar-q:v1`:
+
+```
+{ v, entered, setupDone, stateName, appearance, map, currency,
+  counties[], methods{ bank[], debit[], credit[], cash },
+  accounts[], expenses[], fixed[] }
+```
+
+Limits: 12 counties, 5 accounts, 5 items per payment type, 50 fixed expenses, 50,000 expenses, and an amount of up to 999,999,999.99. Every time the state is loaded, it goes through `sanitize()`, which checks each field against what the app can actually produce and drops or resets anything else. In the installed app the state is also written to native storage, which iOS does not clear the way it can clear web storage.
+
+**The map.** `src/CityScene.js` is a plain class, React only gives it a `<div>`. It owns the renderer, the camera, `OrbitControls` (turn, zoom, pan), a raycaster for tapping counties, and the render loop, which stops when you leave the tab. Nothing is loaded from a file: every building, tree, car and person is built in code from boxes, cylinders and cones, and the only textures are drawn on a canvas (the windows). The board is 30 x 30 with a crossing road, 12 lots for counties and 4 decoration cells.
+
+**Map skins.** `src/maps.js` holds a recipe for each map: the palette, the buildings, the empty-plot structure, the pool of vehicles, the landmarks, the tree style, the outfits, the lighting, the fog and the particles. Changing the map throws away the whole world group and builds it again from the new recipe, which is why everything changes together. Japan uses toon materials plus an outline pass for the anime look, and Wireframe swaps its line colours between Light and Dark.
+
+**Construction.** `levelFor()` in `src/util.js` turns a county's spending this month into a level, with no ceiling (about 2.5 levels per 20 EUR, easing off for very large totals, and each currency has its own rough scale). `plan(level)` in the scene says what stands on the lot at that level: the sign, the foundation, the hut, the main building, the fence and flag, then extra buildings and more floors taking turns. When a new expense raises the level, only the pieces that changed are built, and each one grows in on a timer while a crane turns on the lot.
+
+**People and vehicles.** The people are small rigs with legs and arms that swing as they walk. Vehicles come from a pool, enter at one end of a road, keep a distance from the one in front, and leave at the other end.
+
+**Haptics.** In the installed app it uses the native Taptic Engine (light for ordinary taps, medium for the main actions). In a browser it falls back to the single gentle tick that iOS Safari allows.
+
+**Backups.** Export writes `{ app, format, exportedAt, data }` to a `.json` file and opens the share sheet. Import treats the file as untrusted: it checks the shape, runs the data through `sanitize()`, asks before replacing anything, and keeps one undo copy.
+
+### Project layout
+
+```
+src/
+  main.jsx            entry point, crash guard
+  App.jsx             tabs and screens
+  store.js            state, validation, persistence
+  CityScene.js        the 3D map (Three.js)
+  maps.js             the map skins
+  backup.js           export and import
+  haptics.js          native and web haptics
+  util.js             currencies, formatting, the level function
+  components/         Home, Analytics, History, Profile, AddSheet, Onboarding, Splash...
+android/              Capacitor Android project
+ios/                  Capacitor iOS project
+build-ios.sh          unsigned IPA build for a Mac
+.github/workflows/    the CI build
+docs/screenshots/     the pictures in this README
+```
+
+### Testing
+
+There is no automated test suite yet. I check things in a headless browser (screenshots, hostile saved data, the backup round trip) and on my own iPhone. The Android APK is built and signed, but I have not run it on an Android device yet, so treat it as untested.
+
 ### Security
 
 I tried to attack my own app before sharing it, and fixed what I found:
@@ -160,10 +225,6 @@ The Android and iPhone builds run on GitHub Actions (`.github/workflows/build.ym
 - **iPhone:** `npx cap sync ios`, then `./build-ios.sh` on a Mac with Xcode. It gives you the unsigned `.ipa`.
 
 Releases are put together by hand, with the signed APK and the unsigned IPA attached.
-
-### Built with
-
-React, Vite, Three.js (the map), Lenis (smooth scrolling) and Capacitor (the Android and iPhone shells, with the Haptics, Preferences, Filesystem and Share plugins).
 
 ### Contributors
 
