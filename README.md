@@ -87,7 +87,7 @@ The big **+** in the middle opens a number pad. You pick the county, the account
 
 Analytics shows a graph of the expenses made in that month, with the days split into 1 to 15 and 16 to the end of the month. It also shows **last month** and the **difference** between last month and this month, the last 6 months, and the top counties.
 
-<!-- screenshot: analytics -->
+<p align="center"><img src="docs/screenshots/analytics-1.jpg" alt="Analytics: this month, last month, the difference and the day-by-day graph" width="300">&nbsp;&nbsp;<img src="docs/screenshots/analytics-2.jpg" alt="Analytics: top counties" width="300"></p>
 
 ### History
 
