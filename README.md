@@ -148,7 +148,7 @@ Only on your phone. If you delete the app, the data goes with it, so use **Profi
 | CI | GitHub Actions: an Ubuntu runner (Java 21, Gradle) builds the APK, a macOS runner (`xcodebuild`) builds the IPA |
 | Targets | Android 7 and up (minSdk 24, target 36), iOS 15 and up |
 
-The whole app is about 3,500 lines. There is no backend and no network code, the app never makes a request.
+The whole app is about 3,500 lines. There is no backend and no network code in the app, it never makes a request. (The Android manifest still lists the internet permission, because Capacitor adds it by default. The app doesn't use it, and I haven't removed it because I can't test the change on an Android device yet.)
 
 ### How it works
 
