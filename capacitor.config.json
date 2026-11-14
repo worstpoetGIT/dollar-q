@@ -1,0 +1,11 @@
+{
+  "appId": "win.fridayai.dollarq",
+  "appName": "DollarQ",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "webContentsDebuggingEnabled": false
+  }
+}
