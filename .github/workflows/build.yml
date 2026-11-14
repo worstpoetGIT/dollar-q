@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    tags: ['v*']
 
 permissions:
   contents: read
@@ -28,28 +27,18 @@ jobs:
         run: |
           npx vite build
           npx cap sync android
-      - name: Restore the signing key (only when the secret exists)
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/dollarq-release.p12"
-            echo "DQ_KEYSTORE=$RUNNER_TEMP/dollarq-release.p12" >> "$GITHUB_ENV"
-          fi
-      - name: Build the APK
-        env:
-          DQ_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      - name: Build the APK (unsigned; it is signed on the maintainer's own machine)
         working-directory: android
         run: ./gradlew --no-daemon assembleRelease
       - name: Collect the APK
         run: |
           mkdir out
-          cp android/app/build/outputs/apk/release/*.apk out/DollarQ.apk
+          cp android/app/build/outputs/apk/release/*.apk out/DollarQ-unsigned.apk
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: DollarQ-apk
-          path: out/DollarQ.apk
+          path: out/DollarQ-unsigned.apk
           retention-days: 14
 
   ios:
@@ -78,23 +67,3 @@ jobs:
           name: DollarQ-ipa
           path: out/DollarQ-unsigned.ipa
           retention-days: 14
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, ios]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist-files
-          merge-multiple: true
-      - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ls -la dist-files
-          gh release create "$GITHUB_REF_NAME" dist-files/DollarQ.apk dist-files/DollarQ-unsigned.ipa \
-            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --notes "Android: install DollarQ.apk directly. iPhone: sign DollarQ-unsigned.ipa with a sideloading tool such as iLoader. See the README."

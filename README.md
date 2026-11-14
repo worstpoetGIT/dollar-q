@@ -29,7 +29,7 @@ one construction step at a time. Everything you enter stays on your phone.
 Download the files from the [Releases](../../releases) page.
 
 ### Android
-1. Download `DollarQ.apk` and open it. Allow "install unknown apps" for your browser or file manager if asked.
+1. Download `DollarQ.apk` from the release and open it. Allow "install unknown apps" for your browser or file manager if asked.
 2. The app is signed with a fixed key, so later versions install over the top and keep your data.
 
 ### iPhone
@@ -66,13 +66,14 @@ npm run dev          # local preview
 npx vite build       # production web build into dist/
 ```
 
-Native builds run in GitHub Actions (see `.github/workflows/build.yml`):
+Native builds run in GitHub Actions (see `.github/workflows/build.yml`) and produce two unsigned files:
 
-- **Android:** `npx cap sync android`, then `./gradlew assembleRelease` in `android/`. Release signing reads
-  `ANDROID_KEYSTORE_B64` and `ANDROID_KEYSTORE_PASSWORD` from repository secrets.
+- **Android:** `npx cap sync android`, then `./gradlew assembleRelease` in `android/`. The result is signed
+  with `apksigner` on the maintainer's own machine using a private key that is never uploaded anywhere.
+  To sign your own build: `zipalign -c 4 app.apk` then `apksigner sign --ks your.p12 --out DollarQ.apk app.apk`.
 - **iPhone:** `npx cap sync ios`, then `./build-ios.sh` on a Mac with Xcode. The script produces an unsigned `.ipa`.
 
-To publish a release, push a tag such as `v0.1.0`. The workflow builds both apps and attaches them to a release.
+Releases are published by hand with the signed APK and the unsigned IPA attached.
 
 ## Built with
 
