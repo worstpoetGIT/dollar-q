@@ -81,7 +81,7 @@ The whole map is made with Three.js and the animations are made with Lenis. It c
 
 The big **+** in the middle opens a number pad. You pick the county, the account (which sets the currency), the payment method, how many people the expense was for, the date, and an optional note. Every tap has a little haptic.
 
-<!-- screenshot: add expense keypad -->
+<p align="center"><img src="docs/screenshots/add-expense.jpg" alt="Adding an expense with the number pad" width="320"></p>
 
 ### Analytics Page
 
