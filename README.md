@@ -93,7 +93,7 @@ Analytics shows a graph of the expenses made in that month, with the days split 
 
 All the expenditures from the current month and previous months are in the History tab. You can go month by month, filter by county, or press the search button and type a keyword to search every month at once. To delete an expense, **swipe it to the left** and tap Delete.
 
-<!-- screenshot: history, ideally mid-swipe -->
+<p align="center"><img src="docs/screenshots/history.jpg" alt="History: expenses grouped by day, with month navigation, county filters and search" width="320"></p>
 
 ### Profile
 
