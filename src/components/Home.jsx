@@ -17,6 +17,10 @@ const FILTERS = [
   { id: 'Other', label: 'Other', icon: 'dots', color: '#6c757d' },
 ]
 
+const MODES = ['system', 'light', 'dark']
+const MODE_ICON = { system: 'auto', light: 'sun', dark: 'moon' }
+const MODE_LABEL = { system: 'System', light: 'Light', dark: 'Dark' }
+
 export default function Home({ s, active, saved, onAdd, onHistory }) {
   const box = useRef(null)
   const scene = useRef(null)
@@ -108,9 +112,8 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
       </div>
 
       <button className="map-btn" onClick={() => setMapOpen(true)} aria-label="Change map"><Icon name="map" size={22} /></button>
-      <button className="theme-btn" onClick={() => setState((st) => ({ ...st, appearance: { system: 'light', light: 'dark', dark: 'system' }[st.appearance || 'system'] || 'system' }))}
-        aria-label={'Appearance: ' + (s.appearance || 'system') + '. Tap to change.'}>
-        <Icon name={{ system: 'auto', light: 'sun', dark: 'moon' }[s.appearance || 'system'] || 'auto'} size={22} />
+      <button className="map-btn mode-btn" onClick={() => setState((st) => ({ ...st, appearance: MODES[(MODES.indexOf(st.appearance) + 1) % 3] }))} aria-label={'Appearance: ' + MODE_LABEL[s.appearance || 'system']}>
+        <Icon name={MODE_ICON[s.appearance || 'system']} size={22} />
       </button>
       {mapOpen && (
         <>

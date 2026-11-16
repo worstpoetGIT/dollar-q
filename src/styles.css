@@ -174,7 +174,6 @@ select.field { appearance: none; -webkit-appearance: none; }
 /* map skins */
 .hud-light .spent-label, .hud-light .spent-amt, .hud-light .spent-label .muted { color: #fff; }
 .map-btn { position: absolute; right: 18px; top: calc(env(safe-area-inset-top, 0px) + 12px); width: 46px; height: 46px; border-radius: 50%; background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: grid; place-items: center; box-shadow: var(--shadow), inset 0 0 0 1px var(--line); z-index: 6; }
-.theme-btn { position: absolute; right: 74px; top: calc(env(safe-area-inset-top, 0px) + 12px); width: 46px; height: 46px; border-radius: 50%; background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); display: grid; place-items: center; box-shadow: var(--shadow), inset 0 0 0 1px var(--line); z-index: 6; }
 .map-scrim { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.28); }
 .map-sheet { position: absolute; left: 10px; right: 10px; bottom: calc(env(safe-area-inset-bottom, 0px) + 100px); z-index: 21; background: var(--surface); border-radius: 28px; padding: 16px 0 14px 16px; box-shadow: var(--shadow), inset 0 0 0 1px var(--line); }
 .map-sheet > .row { padding-right: 16px; }
@@ -209,9 +208,10 @@ select.field { appearance: none; -webkit-appearance: none; }
 
 /* a solid strip behind the phone's status bar, so scrolled content never slides under the clock and battery */
 .status-cover { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 40; pointer-events: none; }
-.hud-light .theme-btn { color: inherit; }
 /* switch */
 .switch { flex: none; width: 52px; height: 32px; border-radius: 16px; background: var(--ink-2); opacity: .45; position: relative; transition: background .2s, opacity .2s; }
 .switch i { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: var(--bg); transition: transform .2s; }
 .switch.on { background: var(--green); opacity: 1; }
 .switch.on i { transform: translateX(20px); background: #fff; }
+
+.mode-btn { right: 72px; }
