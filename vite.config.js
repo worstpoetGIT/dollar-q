@@ -18,4 +18,5 @@ export default defineConfig({
   server: { allowedHosts: hosts, cors: false, headers },
   preview: { allowedHosts: hosts, cors: false, headers },
   build: { chunkSizeWarningLimit: 1200, sourcemap: false },
+  test: { environment: 'node', setupFiles: ['./tests/setup.js'], include: ['tests/**/*.test.js'] },
 })

@@ -6,10 +6,10 @@ import { fmt, ymOf, shiftYm, monthLabel, dayLabel } from '../util.js'
 import { useLenis } from '../hooks.js'
 import { haptic } from '../haptics.js'
 
-const REVEAL = 96
+const REVEAL = 176
 
 // Left-swipe a row to reveal Delete (iOS-style). Vertical scrolling stays native.
-function SwipeRow({ open, onOpen, onClose, onDelete, onTap, children }) {
+function SwipeRow({ open, onOpen, onClose, onDelete, onEdit, onTap, children }) {
   const [dx, setDx] = useState(0)
   const [drag, setDrag] = useState(false)
   const [gone, setGone] = useState(false)
@@ -56,7 +56,10 @@ function SwipeRow({ open, onOpen, onClose, onDelete, onTap, children }) {
 
   return (
     <div className={'swipe' + (gone ? ' gone' : '') + (open || drag ? ' active' : '')}>
-      <button className="swipe-del" onClick={del} tabIndex={open ? 0 : -1} aria-label="Delete transaction"><Icon name="trash" size={20} /><span>Delete</span></button>
+      <div className="swipe-actions">
+        <button className="swipe-edit" onClick={() => { onClose(); onEdit() }} tabIndex={open ? 0 : -1} aria-label="Edit transaction"><Icon name="edit2" size={20} /><span>Edit</span></button>
+        <button className="swipe-del" onClick={del} tabIndex={open ? 0 : -1} aria-label="Delete transaction"><Icon name="trash" size={20} /><span>Delete</span></button>
+      </div>
       <div className="swipe-fg" style={{ transform: `translateX(${x}px)`, transition: drag ? 'none' : 'transform .28s cubic-bezier(.2,.9,.3,1)' }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={click}>
         {children}
@@ -67,7 +70,7 @@ function SwipeRow({ open, onOpen, onClose, onDelete, onTap, children }) {
 
 const METHOD = { bank: 'Bank transfer', debit: 'Debit', credit: 'Credit', cash: 'Cash' }
 
-export default function History({ s, initCounty }) {
+export default function History({ s, initCounty, onEdit }) {
   const ref = useRef(null)
   useLenis(ref)
   const nowYm = ymOf(Date.now())
@@ -146,13 +149,13 @@ export default function History({ s, initCounty }) {
                 const c = countyOf(e.countyId)
                 return (
                   <SwipeRow key={e.id} open={openId === e.id} onOpen={() => setOpenId(e.id)} onClose={() => setOpenId(null)}
-                    onDelete={() => { deleteExpense(e.id); setOpenId(null) }} onTap={() => { setOpenId(null); setDetailId(detailId === e.id ? null : e.id) }}>
+                    onDelete={() => { deleteExpense(e.id); setOpenId(null) }} onEdit={() => onEdit && onEdit(e)} onTap={() => { setOpenId(null); setDetailId(detailId === e.id ? null : e.id) }}>
                     <div className="hist-item">
                       <span className="ico-circle" style={{ width: 42, height: 42, background: (c?.color || '#888') + '26', color: c?.color || '#888' }}><Icon name={c ? countyIcon(c) : 'tag'} size={20} /></span>
                       <div className="sp" style={{ minWidth: 0 }}>
                         <div className="t">{c?.name || 'Removed county'}{e.fixedId ? ' · auto' : ''}</div>
-                        <div className="s">{[e.note, METHOD[e.methodType] + (e.methodName ? ' · ' + e.methodName : ''), e.people > 1 ? e.people + ' people' : ''].filter(Boolean).join(' · ')}</div>
-                        {detailId === e.id && <div className="s" style={{ marginTop: 6 }}>{new Date(e.ts).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}{e.people > 1 ? ` · ${fmt(e.amount / e.people, e.currency)} each` : ''}</div>}
+                        <div className="s">{[e.note, METHOD[e.methodType] + (e.methodName ? ' · ' + e.methodName : ''), e.people > 1 ? 'Total ' + fmt(e.total ?? e.amount, e.currency) + ' · ' + e.people + ' people' : ''].filter(Boolean).join(' · ')}</div>
+                        {detailId === e.id && <div className="s" style={{ marginTop: 6 }}>{new Date(e.ts).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}{e.people > 1 ? ` · your share ${fmt(e.amount, e.currency)} of ${fmt(e.total ?? e.amount, e.currency)}` : ''}</div>}
                       </div>
                       <b>{fmt(e.amount, e.currency)}</b>
                     </div>

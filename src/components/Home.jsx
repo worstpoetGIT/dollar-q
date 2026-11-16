@@ -108,6 +108,10 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
       </div>
 
       <button className="map-btn" onClick={() => setMapOpen(true)} aria-label="Change map"><Icon name="map" size={22} /></button>
+      <button className="theme-btn" onClick={() => setState((st) => ({ ...st, appearance: { system: 'light', light: 'dark', dark: 'system' }[st.appearance || 'system'] || 'system' }))}
+        aria-label={'Appearance: ' + (s.appearance || 'system') + '. Tap to change.'}>
+        <Icon name={{ system: 'auto', light: 'sun', dark: 'moon' }[s.appearance || 'system'] || 'auto'} size={22} />
+      </button>
       {mapOpen && (
         <>
           <div className="map-scrim" onClick={() => setMapOpen(false)} />

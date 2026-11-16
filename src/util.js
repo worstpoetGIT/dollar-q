@@ -73,3 +73,6 @@ export function levelFor(amount, code) {
   const n = u <= 6 ? u * 2.5 : 15 + 5.5 * Math.log(u - 5)
   return Math.max(1, Math.round(n))
 }
+
+// Splitwise-style split: with N people, my own expense is my equal share of the whole bill, rounded to cents.
+export const shareOf = (total, people) => Math.max(0.01, Math.round((total / Math.max(1, Math.round(people) || 1)) * 100) / 100)

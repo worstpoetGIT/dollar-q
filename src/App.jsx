@@ -10,6 +10,8 @@ import AddSheet from './components/AddSheet.jsx'
 import { NameStep, Wizard } from './components/Onboarding.jsx'
 import { useStore, setState, runFixed } from './store.js'
 import { fmt } from './util.js'
+import { Capacitor } from '@capacitor/core'
+import { StatusBar } from '@capacitor/status-bar'
 
 const TABS = [['home', 'city', 'State'], ['analytics', 'chart', 'Analytics'], null, ['history', 'receipt', 'History'], ['profile', 'user', 'Profile']]
 
@@ -38,18 +40,26 @@ export default function App() {
   }, [s.appearance])
 
   useEffect(() => {
+    // minimalist mode: hide the phone's status bar (clock, signal, battery) while the app is open
+    document.documentElement.dataset.minimal = s.minimal ? '1' : ''
+    if (Capacitor.isNativePlatform()) (s.minimal ? StatusBar.hide() : StatusBar.show()).catch(() => {})
+  }, [s.minimal])
+
+  useEffect(() => {
     runFixed()
     const h = () => document.visibilityState === 'visible' && runFixed()
     document.addEventListener('visibilitychange', h)
     return () => document.removeEventListener('visibilitychange', h)
   }, [])
 
-  const onSaved = useCallback((e) => {
+  const onSaved = useCallback((e, edited) => {
     setAdding(null)
-    setSaved({ n: Date.now(), countyId: e.countyId, amount: e.amount, currency: e.currency })
     const c = s.counties.find((x) => x.id === e.countyId)
-    setToast({ n: Date.now(), text: fmt(e.amount, e.currency) + ' · ' + (c?.name || ''), sub: 'Transaction recorded' })
-    setTab('home')
+    setToast({ n: Date.now(), text: fmt(e.amount, e.currency) + ' · ' + (c?.name || ''), sub: edited ? 'Transaction updated' : 'Transaction recorded' })
+    if (!edited) {
+      setSaved({ n: Date.now(), countyId: e.countyId, amount: e.amount, currency: e.currency })
+      setTab('home')
+    }
     setTimeout(() => setToast(null), 3100)
   }, [s.counties])
 
@@ -64,9 +74,10 @@ export default function App() {
             onAdd={(id) => setAdding({ countyId: id })}
             onHistory={(id) => { setHistCounty(id); go('history') }} />
           {tab === 'analytics' && <Analytics s={s} />}
-          {tab === 'history' && <History s={s} initCounty={histCounty} />}
+          {tab === 'history' && <History s={s} initCounty={histCounty} onEdit={(e) => setAdding({ edit: e })} />}
           {tab === 'profile' && <Profile s={s} sub={sub} setSub={setSub} />}
 
+          {tab !== 'home' && !s.minimal && <div className="status-cover" aria-hidden="true" />}
           <nav className="tabbar">
             {TABS.map((t, i) => t ? (
               <button key={t[0]} className={'tab' + (tab === t[0] ? ' on' : '')} onClick={() => { if (t[0] !== 'history') setHistCounty(null); go(t[0]) }}>
@@ -77,7 +88,7 @@ export default function App() {
             ))}
           </nav>
 
-          {adding && <AddSheet s={s} countyId={adding.countyId} onClose={() => setAdding(null)} onSaved={onSaved} />}
+          {adding && <AddSheet key={adding.edit ? adding.edit.id : 'new'} s={s} countyId={adding.countyId} edit={adding.edit} onClose={() => setAdding(null)} onSaved={onSaved} />}
           {!s.setupDone && !splash && <Wizard s={s} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
         </>
       )}

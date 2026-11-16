@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
-import { uid, ymOf, shiftYm, daysIn, CURRENCIES } from './util.js'
+import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareOf } from './util.js'
 
 const KEY = 'dollar-q:v1'
 
@@ -36,6 +36,7 @@ const initial = () => ({
   stateName: '',
   season: 'summer',
   appearance: 'system',
+  minimal: false,
   map: 'city',
   currency: 'INR',
   counties: DEFAULT_COUNTIES.map((c) => ({ ...c })),
@@ -56,10 +57,16 @@ const str = (v, max, fallback = '') => (typeof v === 'string' ? v.replace(/[\u00
 const idOf = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(v) ? v : null)
 const num = (v, min, max, fallback) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback)
 const oneOf = (v, list, fallback) => (list.includes(v) ? v : fallback)
+// money must be a real, positive number; a huge one is capped, zero, negative or non-numeric is refused
+const money = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(v, MAX_AMOUNT) : null)
 const arr = (v) => (Array.isArray(v) ? v : [])
 const CODES = CURRENCIES.map((c) => c.code)
 
+let migrated = false
+export const lastLoadMigrated = () => migrated
+
 export function sanitize(raw) {
+  migrated = false
   const base = initial()
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.v !== 1) return base
   const seen = new Set()
@@ -94,7 +101,7 @@ export function sanitize(raw) {
 
   const fixed = arr(raw.fixed).slice(0, MAX_FIXED).map((f) => {
     const id = f && typeof f === 'object' ? fresh(idOf(f.id)) : null
-    const amount = id ? num(f.amount, 0.01, MAX_AMOUNT, null) : null
+    const amount = id ? money(f.amount) : null
     if (!id || amount === null || !countyIds.has(f.countyId)) return null
     return {
       id, name: str(f.name, 40, 'Fixed expense') || 'Fixed expense', amount, countyId: f.countyId,
@@ -105,22 +112,28 @@ export function sanitize(raw) {
   }).filter(Boolean)
   const fixedIds = new Set(fixed.map((f) => f.id))
 
+  // Expenses saved before the split existed hold the whole bill in `amount`. On load every expense is given a `total`
+  // (the whole bill) and its `amount` becomes my equal share of it, so old data is converted the moment the app opens.
+  migrated = false
   const expenses = arr(raw.expenses).slice(-MAX_EXPENSES).map((e) => {
     const id = e && typeof e === 'object' ? fresh(idOf(e.id)) : null
-    const amount = id ? num(e.amount, 0.01, MAX_AMOUNT, null) : null
+    const hasTotal = id ? money(e.total) : null
+    const total = id ? (hasTotal !== null ? hasTotal : money(e.amount)) : null
     const ts = id ? num(e.ts, 946684800000, now + 366 * 864e5, null) : null // 2000-01-01 .. a year ahead
-    if (!id || amount === null || ts === null || typeof e.countyId !== 'string') return null
+    if (!id || total === null || ts === null || typeof e.countyId !== 'string') return null
+    if (hasTotal === null) migrated = true
     const acc = accById.get(e.accountId) || accounts[0]
+    const people = Math.round(num(e.people, 1, 20, 1))
     return {
-      id, countyId: idOf(e.countyId) || 'removed', amount, accountId: acc.id, currency: oneOf(e.currency, CODES, acc.currency),
-      methodType: oneOf(e.methodType, TYPES, 'cash'), methodName: str(e.methodName, 22), people: Math.round(num(e.people, 1, 20, 1)),
+      id, countyId: idOf(e.countyId) || 'removed', amount: shareOf(total, people), total, accountId: acc.id, currency: oneOf(e.currency, CODES, acc.currency),
+      methodType: oneOf(e.methodType, TYPES, 'cash'), methodName: str(e.methodName, 22), people,
       note: str(e.note, 80), ts, fixedId: fixedIds.has(e.fixedId) ? e.fixedId : null,
     }
   }).filter(Boolean)
 
   return {
     v: 1, entered: raw.entered === true, setupDone: raw.setupDone === true, stateName: str(raw.stateName, 28),
-    season: 'summer', appearance: oneOf(raw.appearance, ['system', 'light', 'dark'], 'system'),
+    season: 'summer', appearance: oneOf(raw.appearance, ['system', 'light', 'dark'], 'system'), minimal: raw.minimal === true,
     map: typeof raw.map === 'string' && /^[a-z]{2,12}$/.test(raw.map) ? raw.map : 'city',
     currency: oneOf(raw.currency, CODES, accounts[0].currency), counties, methods, accounts, expenses, fixed,
   }
@@ -131,6 +144,7 @@ function load() {
 }
 
 let state = load()
+const migratedAtLoad = migrated
 const listeners = new Set()
 const subscribe = (l) => { listeners.add(l); return () => listeners.delete(l) }
 const emit = () => listeners.forEach((l) => l())
@@ -143,12 +157,14 @@ const persist = () => {
   if (NATIVE) Preferences.set({ key: KEY, value: json }).catch(() => {})
 }
 
+if (migratedAtLoad && state.entered) persist() // write the converted expenses straight back
+
 if (NATIVE) {
   // if web storage was cleared (or is older), restore from native storage
   Preferences.get({ key: KEY }).then(({ value }) => {
     if (!value) { if (state.entered) persist(); return }
     const saved = sanitize(JSON.parse(value))
-    if (saved.entered && (!state.entered || saved.expenses.length > state.expenses.length)) { state = saved; try { localStorage.setItem(KEY, value) } catch { /* ignore */ } emit() }
+    if (saved.entered && (!state.entered || saved.expenses.length > state.expenses.length)) { state = saved; persist(); emit() }
   }).catch(() => {})
 }
 
@@ -181,16 +197,33 @@ export const hasUndo = () => { try { return !!localStorage.getItem(KEY + ':befor
 
 export const resetAll = () => setState(initial())
 
-export function addExpense({ countyId, amount, accountId, methodType, methodName, people, note, ts, fixedId }) {
+const clean = ({ countyId, amount, accountId, methodType, methodName, people, note, ts }) => {
   const acc = state.accounts.find((a) => a.id === accountId) || state.accounts[0]
-  const amt = num(amount, 0.01, MAX_AMOUNT, null)
-  if (amt === null || !state.counties.some((c) => c.id === countyId)) return null
-  const e = {
-    id: uid(), countyId, amount: amt, accountId: acc.id, currency: acc.currency,
+  const total = money(amount)
+  if (total === null || !state.counties.some((c) => c.id === countyId)) return null
+  const n = Math.round(num(people, 1, 20, 1))
+  return {
+    countyId, amount: shareOf(total, n), total, accountId: acc.id, currency: acc.currency,
     methodType: oneOf(methodType, ['bank', 'debit', 'credit', 'cash'], 'cash'), methodName: str(methodName, 22),
-    people: Math.round(num(people, 1, 20, 1)), note: str(note, 80), ts: num(ts, 946684800000, Date.now() + 366 * 864e5, Date.now()), fixedId: fixedId || null,
+    people: n, note: str(note, 80), ts: num(ts, 946684800000, Date.now() + 366 * 864e5, Date.now()),
   }
+}
+
+// `amount` is the whole bill; my own expense becomes my equal share of it.
+export function addExpense(input) {
+  const c = clean(input)
+  if (!c) return null
+  const e = { id: uid(), ...c, fixedId: input.fixedId || null }
   setState((s) => ({ ...s, expenses: [...s.expenses, e] }))
+  return e
+}
+
+export function updateExpense(id, input) {
+  const old = state.expenses.find((x) => x.id === id)
+  const c = old && clean(input)
+  if (!c) return null
+  const e = { ...old, ...c }
+  setState((s) => ({ ...s, expenses: s.expenses.map((x) => (x.id === id ? e : x)) }))
   return e
 }
 export const deleteExpense = (id) => setState((s) => ({ ...s, expenses: s.expenses.filter((e) => e.id !== id) }))
@@ -212,7 +245,7 @@ export function runFixed() {
       if (!d) return f
       const acc = s.accounts.find((a) => a.id === f.accountId) || s.accounts[0]
       exps.push({
-        id: uid(), countyId: f.countyId, amount: f.amount, accountId: acc.id, currency: acc.currency,
+        id: uid(), countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
         methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
         note: f.name, ts: new Date(now.getFullYear(), now.getMonth(), d.day, 9).getTime(), fixedId: f.id,
       })

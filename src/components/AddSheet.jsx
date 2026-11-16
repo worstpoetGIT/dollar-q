@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react'
 import Icon from './Icon.jsx'
-import { addExpense } from '../store.js'
-import { symbolOf, fmtNum } from '../util.js'
+import { addExpense, updateExpense } from '../store.js'
+import { symbolOf, fmtNum, shareOf } from '../util.js'
 import { countyIcon } from './Editors.jsx'
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '<']
 
-export default function AddSheet({ s, countyId, onClose, onSaved }) {
-  const [cid, setCid] = useState(countyId || s.counties[0]?.id)
-  const [accId, setAccId] = useState(() => (s.accounts.find((a) => a.currency === s.currency) || s.accounts[0]).id)
+const dayOf = (ts) => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+
+export default function AddSheet({ s, countyId, edit, onClose, onSaved }) {
+  const [cid, setCid] = useState(edit ? edit.countyId : countyId || s.counties[0]?.id)
+  const [accId, setAccId] = useState(() => (edit ? s.accounts.find((a) => a.id === edit.accountId) : null)?.id || (s.accounts.find((a) => a.currency === s.currency) || s.accounts[0]).id)
   const methods = useMemo(() => {
     const out = []
     s.methods.bank.forEach((n) => out.push({ k: 'bank:' + n, type: 'bank', name: n, label: 'Bank Transfer · ' + n }))
@@ -17,11 +19,11 @@ export default function AddSheet({ s, countyId, onClose, onSaved }) {
     if (s.methods.cash) out.push({ k: 'cash:', type: 'cash', name: '', label: 'Cash' })
     return out
   }, [s.methods])
-  const [mk, setMk] = useState(methods[0]?.k || '')
-  const [raw, setRaw] = useState('')
-  const [people, setPeople] = useState(1)
-  const [note, setNote] = useState('')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [mk, setMk] = useState(() => (edit && methods.find((x) => x.type === edit.methodType && x.name === (edit.methodName || '')))?.k || methods[0]?.k || '')
+  const [raw, setRaw] = useState(edit ? String(edit.total ?? edit.amount) : '')
+  const [people, setPeople] = useState(edit ? edit.people : 1)
+  const [note, setNote] = useState(edit ? edit.note || '' : '')
+  const [date, setDate] = useState(() => (edit ? dayOf(edit.ts) : dayOf(Date.now())))
 
   const acc = s.accounts.find((a) => a.id === accId) || s.accounts[0]
   const press = (k) => {
@@ -42,10 +44,11 @@ export default function AddSheet({ s, countyId, onClose, onSaved }) {
   const save = () => {
     const m = methods.find((x) => x.k === mk)
     const d = new Date(date + 'T12:00:00')
-    const now = new Date()
-    d.setHours(now.getHours(), now.getMinutes(), 0, 0)
-    const e = addExpense({ countyId: cid, amount, accountId: acc.id, methodType: m?.type || 'cash', methodName: m?.name || '', people, note: note.trim(), ts: d.getTime() })
-    onSaved(e)
+    const clock = edit && dayOf(edit.ts) === date ? new Date(edit.ts) : new Date()
+    d.setHours(clock.getHours(), clock.getMinutes(), 0, 0)
+    const input = { countyId: cid, amount, accountId: acc.id, methodType: m?.type || 'cash', methodName: m?.name || '', people, note: note.trim(), ts: d.getTime() }
+    const e = edit ? updateExpense(edit.id, input) : addExpense(input)
+    if (e) onSaved(e, !!edit)
   }
 
   return (
@@ -57,7 +60,7 @@ export default function AddSheet({ s, countyId, onClose, onSaved }) {
           <div className="ico-circle" style={{ width: 40, height: 40, background: (county?.color || '#888') + '26', color: county?.color }}>
             <Icon name={county ? countyIcon(county) : 'tag'} size={20} />
           </div>
-          <div className="sp"><b style={{ fontSize: 20.4 }}>New expense</b><div className="muted" style={{ fontSize: 15 }}>{county?.name}</div></div>
+          <div className="sp"><b style={{ fontSize: 20.4 }}>{edit ? 'Edit expense' : 'New expense'}</b><div className="muted" style={{ fontSize: 15 }}>{county?.name}</div></div>
           <button className="x-btn" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
 
@@ -86,16 +89,16 @@ export default function AddSheet({ s, countyId, onClose, onSaved }) {
             <span style={{ fontWeight: 700, minWidth: 74, textAlign: 'center', fontSize: 16.8 }}>{people} {people === 1 ? 'person' : 'people'}</span>
             <button onClick={() => setPeople((p) => Math.min(20, p + 1))}>+</button>
           </div>
-          <input type="date" className="field" style={{ width: 'auto', padding: '8px 12px', borderRadius: 999, fontSize: 16.8 }} value={date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setDate(e.target.value)} />
+          <input type="date" className="field" style={{ width: 'auto', padding: '8px 12px', borderRadius: 999, fontSize: 16.8 }} value={date} max={dayOf(Date.now())} onChange={(e) => setDate(e.target.value)} />
         </div>
-        {people > 1 && amount > 0 && <div className="muted" style={{ textAlign: 'center', fontSize: 15.6, marginTop: 8 }}>{symbolOf(acc.currency)}{fmtNum(amount / people, acc.currency)} each</div>}
+        {people > 1 && amount > 0 && <div className="muted" style={{ textAlign: 'center', fontSize: 15.6, marginTop: 8 }}>Your share {symbolOf(acc.currency)}{fmtNum(shareOf(amount, people), acc.currency)} of {symbolOf(acc.currency)}{fmtNum(amount, acc.currency)}</div>}
 
-        <input className="field" style={{ marginTop: 10 }} placeholder="Note (optional)" maxLength={80} value={note} maxLength={60} onChange={(e) => setNote(e.target.value)} />
+        <input className="field" style={{ marginTop: 10 }} placeholder="Note (optional)" maxLength={80} value={note} onChange={(e) => setNote(e.target.value)} />
 
         <div className="keys">
           {KEYS.map((k) => <button key={k} className="key" onClick={() => press(k)}>{k === '<' ? <Icon name="left" size={22} /> : k}</button>)}
         </div>
-        <button className="btn green" disabled={amount <= 0 || !cid} onClick={save}>Save Expense</button>
+        <button className="btn green" disabled={amount <= 0 || !cid} onClick={save}>{edit ? 'Save changes' : 'Save Expense'}</button>
       </div>
     </>
   )

@@ -54,7 +54,7 @@ On top there are circles which filter the counties:
 4. Shopping: Fashion, Electronics
 5. Other: whatever is left
 
-The whole map is made with Three.js, and the smooth scrolling on the other pages comes from Lenis. The map can be turned any way you like with one finger, zoomed with two fingers, and tapping a county shows a card with **Add** and **History**. The card at the bottom says **"All State"**, *Spending breakdown by county*.
+The whole map is made with Three.js, and the smooth scrolling on the other pages comes from Lenis. The map can be turned any way you like with one finger, zoomed with two fingers, and tapping a county shows a card with **Add** and **History**. The two round buttons in the top right are the **map picker** and the **appearance button**, which cycles System, Light and Dark (Light is all white, Dark is all black). The card at the bottom says **"All State"**, *Spending breakdown by county*.
 
 <p align="center"><img src="docs/screenshots/home.jpg" alt="Home page on the Wireframe map, with the buildings grown from this month's spending" width="320"></p>
 <!-- screenshot: a county selected, with the bottom card -->
@@ -80,6 +80,8 @@ The whole map is made with Three.js, and the smooth scrolling on the other pages
 
 The big **+** in the middle opens a number pad. You pick the county, the account (which sets the currency), the payment method, how many people the expense was for, the date, and an optional note. Every tap has a little haptic.
 
+**Splitting a bill.** If the expense was for 3 people, the app records only my equal share as my expense, the way Splitwise does it, because the other two pay me back. The whole amount is still written on the transaction, so History shows `Total €30 · 3 people` next to my €10. The county and the totals everywhere use my share, so they match what I actually spent.
+
 <p align="center"><img src="docs/screenshots/add-expense.jpg" alt="Adding an expense with the number pad" width="320"></p>
 
 ### Analytics Page
@@ -90,7 +92,7 @@ Analytics shows a graph of the expenses made in that month, with the days split 
 
 ### History
 
-All the expenditures from the current month and previous months are in the History tab. You can go month by month, filter by county, or press the search button and type a keyword to search every month at once. To delete an expense, **swipe it to the left** and tap Delete.
+All the expenditures from the current month and previous months are in the History tab. You can go month by month, filter by county, or press the search button and type a keyword to search every month at once. To change or remove an expense, **swipe it to the left**: there is an **Edit** button and a **Delete** button. Edit opens the same number pad with everything filled in, so you can fix the amount, the people, the county, the payment method, the date or the note.
 
 <p align="center"><img src="docs/screenshots/history.jpg" alt="History: expenses grouped by day, with month navigation, county filters and search" width="320"></p>
 
@@ -99,7 +101,7 @@ All the expenditures from the current month and previous months are in the Histo
 1. **Accounts**: maximum 5, one currency each (12 currencies to choose from).
 2. **Fixed Expenses & Subscriptions**: things like Claude or ChatGPT, where money is debited from your account on a specific day. Add them once and the app logs them every month, so you don't have to.
 3. **Manage Counties & Payment Methods**: add, rename and delete counties and payment methods.
-4. **Appearance**: System, Light or Dark. Light is all white, Dark is all black.
+4. **Display**: a Minimalist mode switch that hides the phone's status bar (clock, signal, battery) while you are in the app.
 5. **Data**: export a backup file and import it back. More on this below.
 
 <p align="center"><img src="docs/screenshots/profile-1.jpg" alt="Profile: accounts, fixed expenses and counties" width="300" align="top">&nbsp;&nbsp;<img src="docs/screenshots/profile-2.jpg" alt="Profile: appearance, backup and reset" width="300" align="top"></p>
@@ -141,7 +143,8 @@ Only on your phone. If you delete the app, the data goes with it, so use **Profi
 | Smooth scrolling | Lenis |
 | Styling | One CSS file with CSS variables for the themes, fonts bundled with Fontsource (Archivo Black, Inter) |
 | Phone shell | Capacitor 8, for Android and iPhone |
-| Native plugins | Haptics, Preferences, Filesystem, Share |
+| Native plugins | Haptics, Preferences, Filesystem, Share, Status Bar |
+| Tests | Vitest |
 | Storage | `localStorage`, mirrored to native storage (Capacitor Preferences) in the installed app |
 | CI | GitHub Actions: an Ubuntu runner (Java 21, Gradle) builds the APK, a macOS runner (`xcodebuild`) builds the IPA |
 | Targets | Android 7 and up (minSdk 24, target 36), iOS 15 and up |
@@ -194,7 +197,14 @@ docs/screenshots/     the pictures in this README
 
 ### Testing
 
-There is no automated test suite yet. I check things in a headless browser (screenshots, hostile saved data, the backup round trip) and on my own iPhone. The Android APK is built and signed, but I have not run it on an Android device yet, so treat it as untested.
+`npm test` runs an automated suite (Vitest) in a couple of seconds, and the build runs it first on every push. It covers:
+
+- **Data validation** (`sanitize`): garbage, wrong types, fake colours and icons, huge or negative amounts, duplicate ids, prototype pollution, and the conversion of old expenses into shares.
+- **The split**: my share of a bill, rounding to cents, and that converting twice changes nothing.
+- **Construction levels**: the level never drops as the amount grows, has no ceiling, scales per currency, and every level adds something to the lot.
+- **Add, edit and delete** of an expense, and **reading backup files**, including hostile ones.
+
+The 3D map, the animations, the haptics and the installs are not covered by tests. I check those in a headless browser and on my own iPhone. The Android APK is built and signed, but I have not run it on an Android device yet, so treat it as untested.
 
 ### Security
 

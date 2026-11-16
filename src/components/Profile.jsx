@@ -73,15 +73,15 @@ export default function Profile({ s, sub, setSub }) {
           </button>
         ))}
 
-        <div className="label" style={{ marginTop: 26 }}>Appearance</div>
+        <div className="label" style={{ marginTop: 26 }}>Display</div>
         <div className="card">
-          <div className="seg" style={{ display: 'flex' }} role="radiogroup" aria-label="Appearance">
-            {[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([k, t]) => (
-              <button key={k} style={{ flex: 1 }} className={(s.appearance || 'system') === k ? 'on' : ''} role="radio" aria-checked={(s.appearance || 'system') === k}
-                onClick={() => setState((st) => ({ ...st, appearance: k }))}>{t}</button>
-            ))}
-          </div>
-          <div className="muted" style={{ fontSize: 15, marginTop: 10 }}>Light is all white. Dark is all black. System follows your iPhone.</div>
+          <button className="row" style={{ width: '100%', textAlign: 'left' }} role="switch" aria-checked={!!s.minimal} onClick={() => setState((st) => ({ ...st, minimal: !st.minimal }))}>
+            <span className="sp">
+              <div style={{ fontWeight: 700 }}>Minimalist mode</div>
+              <div className="muted" style={{ fontSize: 15, marginTop: 2 }}>Hides the status bar (clock, signal, battery) while you are in the app.</div>
+            </span>
+            <span className={'switch' + (s.minimal ? ' on' : '')}><i /></span>
+          </button>
         </div>
 
         <div className="label" style={{ marginTop: 26 }}>Data</div>
