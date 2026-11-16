@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import { countyIcon } from './Editors.jsx'
 import { deleteExpense } from '../store.js'
-import { fmt, ymOf, shiftYm, monthLabel, dayLabel } from '../util.js'
+import { fmt, ymOf, shiftYm, monthLabel, dayLabel, byAccount } from '../util.js'
+import { setState } from '../store.js'
 import { useLenis } from '../hooks.js'
 import { haptic } from '../haptics.js'
 
@@ -76,6 +77,8 @@ export default function History({ s, initCounty, onEdit }) {
   const nowYm = ymOf(Date.now())
   const [ym, setYm] = useState(nowYm)
   const [cid, setCid] = useState(initCounty || null)
+  const [accId, setAccId] = useState(() => (s.accounts.find((a) => a.currency === s.currency) || s.accounts[0]).id)
+  const acc = s.accounts.find((a) => a.id === accId) || s.accounts[0]
   const [searching, setSearching] = useState(false)
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState(null)
@@ -86,7 +89,7 @@ export default function History({ s, initCounty, onEdit }) {
   const query = q.trim().toLowerCase()
 
   const rows = useMemo(() => {
-    let r = s.expenses
+    let r = byAccount(s.expenses, acc.id)
     if (cid) r = r.filter((e) => e.countyId === cid)
     if (query) {
       r = r.filter((e) => {
@@ -96,7 +99,7 @@ export default function History({ s, initCounty, onEdit }) {
       })
     } else r = r.filter((e) => ymOf(e.ts) === ym)
     return [...r].sort((a, b) => b.ts - a.ts)
-  }, [s.expenses, s.counties, cid, ym, query])
+  }, [s.expenses, s.counties, cid, ym, query, acc.id])
 
   const days = useMemo(() => {
     const m = new Map()
@@ -121,6 +124,13 @@ export default function History({ s, initCounty, onEdit }) {
           <h1 className="title sp" style={{ margin: 0 }}>History</h1>
           <button className="icon-btn" onClick={() => { setSearching((v) => !v); setQ('') }} aria-label="Search"><Icon name={searching ? 'x' : 'search'} size={20} color="var(--indigo)" /></button>
         </div>
+        {s.accounts.length > 1 && (
+          <div className="chips" style={{ marginBottom: 12 }}>
+            {s.accounts.map((a) => (
+              <button key={a.id} className={'pill' + (a.id === acc.id ? ' on' : '')} onClick={() => { setAccId(a.id); setOpenId(null); setDetailId(null); setState((st) => ({ ...st, currency: a.currency })) }}>{a.name} · {a.currency}</button>
+            ))}
+          </div>
+        )}
         {searching ? (
           <input className="field fade-up" autoFocus placeholder="Search every month — county, note, amount, card…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 12 }} />
         ) : (

@@ -62,3 +62,13 @@ describe('editing an expense', () => {
     expect(getState().expenses.length).toBe(0)
   })
 })
+
+describe('History is kept apart per account', () => {
+  it('shows only the chosen account, so currencies are never mixed', async () => {
+    const { byAccount } = await import('../src/util.js')
+    const e = [{ id: '1', accountId: 'a1', currency: 'EUR' }, { id: '2', accountId: 'a2', currency: 'INR' }, { id: '3', accountId: 'a1', currency: 'EUR' }]
+    expect(byAccount(e, 'a1').map((x) => x.id)).toEqual(['1', '3'])
+    expect(byAccount(e, 'a2').map((x) => x.id)).toEqual(['2'])
+    expect(byAccount(e, 'none')).toEqual([])
+  })
+})

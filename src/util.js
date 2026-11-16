@@ -76,3 +76,6 @@ export function levelFor(amount, code) {
 
 // Splitwise-style split: with N people, my own expense is my equal share of the whole bill, rounded to cents.
 export const shareOf = (total, people) => Math.max(0.01, Math.round((total / Math.max(1, Math.round(people) || 1)) * 100) / 100)
+
+// History is kept apart per account, so money in different currencies is never mixed.
+export const byAccount = (expenses, accountId) => expenses.filter((e) => e.accountId === accountId)
