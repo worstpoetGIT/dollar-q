@@ -14,10 +14,6 @@ Everything you type stays on your phone. There's no server, no account, no login
 
 ### Opening the app
 
-The app icon is a circle, with a green "$" and a red "?". When you open the app, the opening animation draws the circle, then the "?" in red, and finally the "$" in green. Then the app opens.
-
-<!-- screenshot: splash -->
-
 The first screen asks you to name your state, let's say Worst Poet's State. The sign on the house stays blank until you start typing, and then it says *Welcome to the state of* whatever you typed. Instead of "Continue", the button says **"Enter without Roaming charges"**.
 
 <!-- screenshot: name screen with a name typed -->
