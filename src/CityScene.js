@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -586,12 +587,10 @@ export class CityScene {
   buildWalkers() {
     const rng = this.rng
     const P = this.T.people
-    for (let i = 0; i < 8; i++) {
+    this.walkers = placeWalkers(8, rng)
+    for (const w of this.walkers) {
       const p = makePerson(rng)
-      const axis = i % 2 ? 'x' : 'z'
-      const off = (i % 4 < 2 ? 1 : -1) * (1.85 + (rng() - 0.5) * 0.25)
-      const dir = rng() > 0.5 ? 1 : -1
-      const w = { p, axis, off, dir, t: (rng() - 0.5) * 26, speed: 0.55 + rng() * 0.5, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) }
+      Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
       const u = p.userData
       if (P.skin) { u.skin = P.skin; u.head.material.color.set(P.skin); u.hands.forEach((h) => h.material.color.set(P.skin)) }
       const coat = P.coats[w.ci % P.coats.length]
@@ -603,7 +602,6 @@ export class CityScene {
       u.hat.visible = !!P.hat
       if (P.hat) u.hat.material.color.set(P.hats ? P.hats[w.ci % P.hats.length] : P.hat)
       this.world.add(p)
-      this.walkers.push(w)
     }
   }
 
@@ -612,24 +610,17 @@ export class CityScene {
     this.cars = this.T.vehicles().map((car) => {
       car.visible = false
       this.world.add(car)
-      return { car, active: false, axis: 'x', lane: 0, dir: 1, t: 0, base: 2.6, speed: 2.6, ph: this.rng() * 6 }
+      const size = new THREE.Box3().setFromObject(car) // how much room it takes up
+      const hl = Math.max(-size.min.x, size.max.x), hw = Math.max(-size.min.z, size.max.z)
+      return Object.assign(newCar(hl, hw), { car, ph: this.rng() * 6 })
     })
     this.spawnIn = 0.4
     for (let i = 0; i < 3; i++) this.spawnVehicle(true)
   }
 
   spawnVehicle(anywhere = false) {
-    const free = this.cars.filter((c) => !c.active)
-    if (!free.length) return
-    const v = free[Math.floor(this.rng() * free.length)]
-    const axis = this.rng() > 0.5 ? 'x' : 'z'
-    const lane = this.rng() > 0.5 ? 0.75 : -0.75
-    const dir = axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1)
-    const t = anywhere ? (this.rng() - 0.5) * 24 : -dir * 16
-    for (const o of this.cars) if (o.active && o.axis === axis && o.lane === lane && Math.abs(o.t - t) < 6) return
-    Object.assign(v, { active: true, axis, lane, dir, t, base: 2.2 + this.rng() * 1.2 })
-    v.speed = v.base
-    v.car.visible = true
+    const c = spawnCar(this.cars, this.rng, anywhere)
+    if (c) c.car.visible = true
   }
 
   buildParticles() {
@@ -685,6 +676,7 @@ export class CityScene {
     this.walkers = []
     this.cars = []
     this.spinners = []
+    this.traffic = makeTraffic()
     this.rng = mulberry(7)
     const C = T.c
     this.mats = { grass: M(C.grass), pad: M(C.pad), round: M(C.round), pine: M(C.pine), blossom: M(C.blossom), water: M(C.water) }
@@ -754,8 +746,8 @@ export class CityScene {
         const from = lot.target > lot.built.L ? lot.target : lot.built.L
         lot.target = L
         const n = L - lot.built.L
-        lot.stepEvery = Math.min(6, Math.max(1, 0.5 + (L - from) * 0.5 + (from - lot.built.L) * 0.3)) / n
-        if (!(lot.stepAt > performance.now())) lot.stepAt = performance.now() + 250
+        lot.stepEvery = 3 * Math.min(6, Math.max(1, 0.5 + (L - from) * 0.5 + (from - lot.built.L) * 0.3)) / n
+        if (!(lot.stepAt > performance.now())) lot.stepAt = performance.now() + 750
         this.setCrane(lot, true)
       } else if (!same || L !== lot.built.L) {
         lot.target = L
@@ -1057,7 +1049,7 @@ export class CityScene {
         if (cu.leaving && cu.grow < 0.02) { this.disposePart(lot.crane); lot.crane = null }
       }
       if (lot.anims && lot.anims.length) {
-        const dur = Math.max(0.35, Math.min(0.9, lot.stepEvery * 1.6))
+        const dur = Math.max(1, Math.min(2.7, lot.stepEvery * 1.6))
         for (const a of lot.anims) {
           a.t = Math.min(1, a.t + dt / dur)
           const e = a.t * a.t * (3 - 2 * a.t) // smooth start and stop, no bounce
@@ -1082,50 +1074,41 @@ export class CityScene {
       this.ringB.scale.setScalar(2 - sc)
     }
 
-    // walkers
+    // the traffic rules decide who goes where, this just moves the models
+    stepTraffic(this.cars, this.walkers, this.traffic, dt)
     for (const w of this.walkers) {
-      w.t += w.dir * w.speed * dt
-      if (w.t > 13.2) { w.t = 13.2; w.dir = -1 }
-      if (w.t < -13.2) { w.t = -13.2; w.dir = 1 }
-      w.ph += dt * (4 + w.speed * 6)
-      const sw = Math.sin(w.ph)
+      w.ph += dt * w.speed * 7 // the stride follows how fast they really go, so waiting people stand still
+      const k = Math.min(1, w.speed * 4)
+      const sw = Math.sin(w.ph) * k
       const u = w.p.userData
       u.legs[0].rotation.x = sw * 0.75
       u.legs[1].rotation.x = -sw * 0.75
       u.arms[0].rotation.x = -sw * 0.6
       u.arms[1].rotation.x = sw * 0.6
       u.torso.rotation.y = sw * 0.08
-      const bob = Math.abs(Math.cos(w.ph)) * 0.045
+      const bob = Math.abs(Math.cos(w.ph)) * 0.045 * k
       if (w.axis === 'x') {
-        w.p.position.set(w.t, 0.1 + bob, w.off)
+        w.p.position.set(w.t, 0.1 + bob, w.lat)
         w.p.rotation.y = w.dir > 0 ? Math.PI / 2 : -Math.PI / 2
       } else {
-        w.p.position.set(w.off, 0.1 + bob, w.t)
+        w.p.position.set(w.lat, 0.1 + bob, w.t)
         w.p.rotation.y = w.dir > 0 ? 0 : Math.PI
       }
     }
     // vehicles come in one end and leave at the other
     this.spawnIn -= dt
-    if (this.spawnIn <= 0) { this.spawnIn = 1.8 + this.rng() * 2.6; this.spawnVehicle() }
+    if (this.spawnIn <= 0) { this.spawnIn = 2.6 + this.rng() * 3; this.spawnVehicle() }
     for (const c of this.cars) {
+      c.car.visible = c.active
       if (!c.active) continue
-      let sp = c.base
-      for (const o of this.cars) {
-        if (o === c || !o.active || o.axis !== c.axis || o.lane !== c.lane) continue
-        const gap = (o.t - c.t) * c.dir
-        if (gap > 0 && gap < 3.8) sp = Math.min(sp, o.speed * (gap < 2.6 ? 0.8 : 1))
-      }
-      c.speed += (sp - c.speed) * Math.min(1, dt * 4)
-      c.t += c.dir * c.speed * dt
-      if (Math.abs(c.t) > 16.5) { c.active = false; c.car.visible = false; continue }
       const ud = c.car.userData
       const vy = (ud.y ?? 0.08) + (ud.bob ? Math.sin(t * 2.2 + c.ph) * ud.bob : 0)
       if (ud.spin) ud.spin.rotation.z -= (c.speed * dt) / ud.r
       if (c.axis === 'x') {
-        c.car.position.set(c.t, vy, c.lane)
+        c.car.position.set(c.t, vy, c.lat)
         c.car.rotation.y = c.dir > 0 ? 0 : Math.PI
       } else {
-        c.car.position.set(c.lane, vy, c.t)
+        c.car.position.set(c.lat, vy, c.t)
         c.car.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
       }
     }
