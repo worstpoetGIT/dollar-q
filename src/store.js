@@ -46,9 +46,7 @@ const initial = () => ({
   fixed: [],
 })
 
-/* ---------- never trust what comes back from storage ---------- */
-// Saved data can be damaged or tampered with (a backup editor, a bad restore, a bug). Every field is
-// checked against what the app can actually produce; anything else is dropped or reset to a safe value.
+// saved data can be broken or edited, so every field gets checked when it loads
 const MAX_AMOUNT = 999999999.99
 const MAX_EXPENSES = 50000
 const MAX_FIXED = 50
@@ -57,7 +55,7 @@ const str = (v, max, fallback = '') => (typeof v === 'string' ? v.replace(/[\u00
 const idOf = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(v) ? v : null)
 const num = (v, min, max, fallback) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback)
 const oneOf = (v, list, fallback) => (list.includes(v) ? v : fallback)
-// money must be a real, positive number; a huge one is capped, zero, negative or non-numeric is refused
+// positive numbers only, huge ones get capped
 const money = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.min(v, MAX_AMOUNT) : null)
 const arr = (v) => (Array.isArray(v) ? v : [])
 const CODES = CURRENCIES.map((c) => c.code)
@@ -72,7 +70,7 @@ export function sanitize(raw) {
   const seen = new Set()
   const fresh = (id) => { if (!id || seen.has(id)) return null; seen.add(id); return id }
 
-  // a missing or damaged list falls back to the defaults; a valid list is kept as the user left it
+  // bad or missing list: use the defaults
   let counties = (Array.isArray(raw.counties) ? raw.counties : base.counties).slice(0, MAX_COUNTIES).map((c, i) => {
     const id = c && typeof c === 'object' ? fresh(idOf(c.id)) : null
     if (!id) return null
@@ -112,8 +110,7 @@ export function sanitize(raw) {
   }).filter(Boolean)
   const fixedIds = new Set(fixed.map((f) => f.id))
 
-  // Expenses saved before the split existed hold the whole bill in `amount`. On load every expense is given a `total`
-  // (the whole bill) and its `amount` becomes my equal share of it, so old data is converted the moment the app opens.
+  // old expenses only have the whole bill in amount. give them a total and turn amount into my share
   migrated = false
   const expenses = arr(raw.expenses).slice(-MAX_EXPENSES).map((e) => {
     const id = e && typeof e === 'object' ? fresh(idOf(e.id)) : null
@@ -148,8 +145,7 @@ const migratedAtLoad = migrated
 const listeners = new Set()
 const subscribe = (l) => { listeners.add(l); return () => listeners.delete(l) }
 const emit = () => listeners.forEach((l) => l())
-// In the installed iPhone app the data is also written to the app's own native storage, which iOS does not
-// clear the way it can clear web storage. Web storage stays as the fast working copy.
+// in the phone app everything is also saved to native storage, iOS can wipe web storage
 const NATIVE = Capacitor.isNativePlatform()
 const persist = () => {
   const json = JSON.stringify(state)
@@ -160,7 +156,7 @@ const persist = () => {
 if (migratedAtLoad && state.entered) persist() // write the converted expenses straight back
 
 if (NATIVE) {
-  // if web storage was cleared (or is older), restore from native storage
+  // web storage cleared? take the native copy
   Preferences.get({ key: KEY }).then(({ value }) => {
     if (!value) { if (state.entered) persist(); return }
     const saved = sanitize(JSON.parse(value))
@@ -176,7 +172,7 @@ export function setState(fn) {
 }
 export const useStore = () => useSyncExternalStore(subscribe, getState)
 
-// Replaces everything (used by Import). The previous data is kept once as an undo copy.
+// import replaces everything, the old data is kept once for undo
 export function replaceState(next) {
   try { localStorage.setItem(KEY + ':before-import', JSON.stringify(state)) } catch { /* ignore */ }
   state = sanitize(next)
@@ -209,7 +205,7 @@ const clean = ({ countyId, amount, accountId, methodType, methodName, people, no
   }
 }
 
-// `amount` is the whole bill; my own expense becomes my equal share of it.
+// amount is the whole bill, what gets saved as the expense is my share
 export function addExpense(input) {
   const c = clean(input)
   if (!c) return null

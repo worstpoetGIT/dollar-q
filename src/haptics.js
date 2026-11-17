@@ -1,6 +1,4 @@
-// Light-to-medium haptics for every tap.
-// Native (Capacitor) builds use the real Taptic Engine with Light/Medium impacts.
-// iOS Safari / home-screen web app has no vibrate API, so we use the iOS 18 "switch checkbox" tick (one fixed gentle strength).
+// haptics: taptic engine in the app, a single tick in safari (iOS 18 switch trick)
 import { Capacitor } from '@capacitor/core'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 

@@ -9,7 +9,7 @@ import { initHaptics } from './haptics.js'
 import { Component } from 'react'
 import App from './App.jsx'
 
-// If anything ever fails to render, show a way out instead of a blank screen.
+// show something instead of a blank screen if rendering breaks
 class Guard extends Component {
   state = { broken: false }
   static getDerivedStateFromError() { return { broken: true } }

@@ -1,6 +1,5 @@
-// Export / import of all app data as one JSON file.
-// Native app: the file is written to the app's cache and handed to the iOS share sheet (Save to Files, AirDrop...).
-// Browser: a normal download. Imports are untrusted input and always go through sanitize().
+// backup: export and import everything as one json file
+// imports get checked before anything is used
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
@@ -36,7 +35,7 @@ export async function exportBackup() {
   markBackup()
 }
 
-// Reads a chosen file and returns what it contains, without changing anything yet.
+// reads the file, changes nothing yet
 export async function readBackup(file) {
   if (!file) throw new Error('No file chosen.')
   if (file.size > MAX_BYTES) throw new Error('That file is too large to be a $? backup.')

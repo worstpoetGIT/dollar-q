@@ -40,7 +40,7 @@ export default function App() {
   }, [s.appearance])
 
   useEffect(() => {
-    // minimalist mode: hide the phone's status bar (clock, signal, battery) while the app is open
+    // minimalist mode hides the status bar
     document.documentElement.dataset.minimal = s.minimal ? '1' : ''
     if (Capacitor.isNativePlatform()) (s.minimal ? StatusBar.hide() : StatusBar.show()).catch(() => {})
   }, [s.minimal])

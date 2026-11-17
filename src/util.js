@@ -63,10 +63,9 @@ export const dayLabel = (ts) => {
 export const sumBy = (list, code) =>
   list.reduce((a, e) => a + (e.currency === code ? e.amount : 0), 0)
 
-// roughly what 20 EUR is worth in each currency: one "unit" of spending
+// about 20 EUR in each currency = 1 unit
 const UNIT = { EUR: 20, USD: 22, GBP: 17, INR: 1900, AED: 80, JPY: 3300, CAD: 30, AUD: 33, SGD: 30, CHF: 19, CNY: 160, SAR: 82 }
-// County level follows the real amount, with no ceiling. Each level is one construction step
-// (foundation, hut, details, an extra building, another floor...). ~2.5 steps per unit, easing off gently.
+// how built up a county is. no cap, it just grows slower once it gets big
 export function levelFor(amount, code) {
   if (!(amount > 0)) return 0
   const u = amount / (UNIT[code] || 20)
@@ -74,8 +73,8 @@ export function levelFor(amount, code) {
   return Math.max(1, Math.round(n))
 }
 
-// Splitwise-style split: with N people, my own expense is my equal share of the whole bill, rounded to cents.
+// my share of a bill split between n people
 export const shareOf = (total, people) => Math.max(0.01, Math.round((total / Math.max(1, Math.round(people) || 1)) * 100) / 100)
 
-// History is kept apart per account, so money in different currencies is never mixed.
+// history shows one account at a time so currencies never mix
 export const byAccount = (expenses, accountId) => expenses.filter((e) => e.accountId === accountId)

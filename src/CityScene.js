@@ -3,9 +3,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
 
-/* ---------- helpers ---------- */
+// helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
-// anime look: flat cel-shaded bands instead of smooth shading
+// toon look for the japan map
 let TOON = false
 let WIRE = false
 const toonRamp = (() => {
@@ -93,7 +93,7 @@ function textPlane(p, text, w, h, bg, fg, x, y, z, ry = 0) {
   return m
 }
 
-/* ---------- building styles (footprint ≈ 3.6 x 3.6, base at y=0) ---------- */
+// buildings, about 3.6 x 3.6
 const STYLE_FN = {
   house(g, f, col) {
     const h = 0.8 + 0.75 * f
@@ -284,7 +284,7 @@ const CELLS = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1]]
 const DECOR = [11.1, 11.1]
 const TAU = Math.PI * 2
 
-/* ---------- scene ---------- */
+// scene
 export class CityScene {
   constructor(container, { onSelect, onViewChanged } = {}) {
     this.container = container
@@ -351,7 +351,7 @@ export class CityScene {
     this.setMap('city')
   }
 
-  /* --- world --- */
+  // world
   buildWorld() {
     const s = this.world
     const m = this.mats
@@ -608,7 +608,7 @@ export class CityScene {
   }
 
   buildCars() {
-    // pool of vehicles; the spawner sends them across the roads one at a time
+    // pool of vehicles, a few cross the roads at a time
     this.cars = this.T.vehicles().map((car) => {
       car.visible = false
       this.world.add(car)
@@ -662,7 +662,7 @@ export class CityScene {
     this.ringB = mkRing(1.95, 2.05, 0x4cc9f0)
   }
 
-  /* --- public API --- */
+  // public
   setMap(name) {
     if (!MAPS[name]) name = 'city'
     const key = name === 'wire' && !this.dark ? 'wireLight' : name
@@ -750,7 +750,7 @@ export class CityScene {
       const look = c.style + '|' + c.color
       const same = lot.built && lot.built.look === look
       if (same && L > lot.built.L) {
-        // an expense was added: construct the new steps one after another
+        // new expense: build the new steps one by one
         const from = lot.target > lot.built.L ? lot.target : lot.built.L
         lot.target = L
         const n = L - lot.built.L
@@ -766,7 +766,7 @@ export class CityScene {
     this.start()
   }
 
-  // what stands on the lot at a given level
+  // what stands on the lot at this level
   plan(L) {
     const p = { found: L >= 1, hut: L === 2, M: L >= 3 ? 1 : 0, extras: L >= 4, A: 0, B: 0, last: 'found' }
     if (L === 2) p.last = 'hut'
@@ -811,7 +811,7 @@ export class CityScene {
     g.parent && g.parent.remove(g)
   }
 
-  // Builds only the pieces that changed since the last level; everything else stays untouched.
+  // only rebuilds the pieces that changed
   rebuildLot(lot, c, L, animate = false) {
     const parts = (lot.parts ||= {})
     const want = {}
@@ -866,7 +866,7 @@ export class CityScene {
       })
       if (lot.dim > 0) for (const mm of mats) mm.color.copy(mm.userData.base).lerp(DIM, lot.dim * 0.78)
       if (animate) {
-        // grow from the height it already had (a new floor rises out of the old roof), or from the ground if new
+        // grow from the current height, or from the ground if new
         const from = old && old.h > 0 ? Math.min(0.97, (old.h * (old.g.scale.y / old.sy)) / hgt) : 0.02
         lot.anims = lot.anims.filter((a) => a.key !== k)
         lot.anims.push({ key: k, g, sy: w.sc[1], from, t: 0 })
@@ -930,7 +930,7 @@ export class CityScene {
     return { x: (v.x * 0.5 + 0.5) * r.width, y: (-v.y * 0.5 + 0.5) * r.height }
   }
 
-  /* --- internals --- */
+  // internals
   flyTo({ x, z, radius, theta, phi }) {
     const off = this.camera.position.clone().sub(this.controls.target)
     const sp = new THREE.Spherical().setFromVector3(off)
@@ -1037,7 +1037,7 @@ export class CityScene {
     const camDist = this.camera.position.distanceTo(this.controls.target)
     if (this.scene.fog) { this.scene.fog.near = camDist - 14; this.scene.fog.far = camDist + 70 }
     for (const lot of this.lots) {
-      // construction: one step at a time until the lot reaches its target level
+      // one step at a time until it reaches the target level
       if (lot.county && lot.built && lot.target > lot.built.L) {
         const now = performance.now()
         if (now >= lot.stepAt) {
@@ -1104,7 +1104,7 @@ export class CityScene {
         w.p.rotation.y = w.dir > 0 ? 0 : Math.PI
       }
     }
-    // vehicles: spawn at one end, drive across, leave
+    // vehicles come in one end and leave at the other
     this.spawnIn -= dt
     if (this.spawnIn <= 0) { this.spawnIn = 1.8 + this.rng() * 2.6; this.spawnVehicle() }
     for (const c of this.cars) {

@@ -9,7 +9,7 @@ import { haptic } from '../haptics.js'
 
 const REVEAL = 176
 
-// Left-swipe a row to reveal Delete (iOS-style). Vertical scrolling stays native.
+// swipe left on a row to show edit and delete
 function SwipeRow({ open, onOpen, onClose, onDelete, onEdit, onTap, children }) {
   const [dx, setDx] = useState(0)
   const [drag, setDrag] = useState(false)

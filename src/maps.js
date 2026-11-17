@@ -1,5 +1,4 @@
-// Map skins. Each one restyles the whole state: ground, roads, buildings, vehicles, people, trees, sky.
-// MAP_LIST is plain data for the picker UI; makeMaps(h) builds the 3D recipes with the scene helpers.
+// map skins: ground, roads, buildings, vehicles, people, trees and sky for each one
 
 export const MAP_LIST = [
   { id: 'city', name: 'Classic City', sky: ['#bfe3ff', '#eaf6ff'], ground: '#74c44a', road: '#48556b', accent: ['#e5383b', '#3a86ff', '#f4a259'] },
@@ -18,7 +17,7 @@ export function makeMaps(h) {
   const G = () => new THREE.Group()
   const variant = (style) => Math.abs([...String(style)].reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 3
 
-  /* ---------- buildings ---------- */
+  // buildings
   const build = {
     lego(g, f, col, style) {
       const v = variant(style)
@@ -157,7 +156,7 @@ export function makeMaps(h) {
     },
   }
 
-  /* ---------- vehicles ---------- */
+  // vehicles
   const stud = (g, c, x, y, z) => cyl(g, 0.13, 0.08, c, x, y, z, 8)
   const legoCar = (c) => { const g = makeCar(c); stud(g, shade(c, 0.28), -0.25, 0.82, 0); stud(g, shade(c, 0.28), 0.1, 0.82, 0); return g }
   const sub = (c) => {
@@ -290,7 +289,7 @@ export function makeMaps(h) {
     court: () => [ball(), ball(), ball(), makeBus(0xc0392b), makeBus(0x1d3f8a), makeCar(0xffffff), ball()],
   }
 
-  /* ---------- landmarks (replace a decor cell) ---------- */
+  // landmarks (replace a decor cell)
   const land = {
     fuji(s, x, z) {
       bx(s, 4.8, 0.12, 4.8, 0x7fc96a, x, 0.1, z)
