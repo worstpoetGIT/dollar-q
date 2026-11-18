@@ -3,7 +3,8 @@
 //  - everything moves along a straight road with two lanes: t is how far along, lat is how far across
 //  - you slow down for whatever is in front of you, so nothing ever runs into anything
 //  - a slower one in front can be overtaken, but only when the other lane is empty for the whole pass
-//  - cars take turns at the crossroad, people wait for a gap before they cross a road
+//  - a traffic signal in the middle of the crossroad decides who goes: when a road has green, its cars drive
+//    and the people walking along it cross the other road. everybody else waits, people at the kerb.
 
 const brake = (gap, a) => Math.sqrt(2 * a * Math.max(0, gap))
 const other = (axis) => (axis === 'x' ? 'z' : 'x')
@@ -13,7 +14,7 @@ export const STOP = 3.4 // cars wait this far from the middle of the crossroad
 const BOX = 1.5 // half the width of a road
 
 const CAR = { brake: 3.5, accel: 2.6, hard: 6.5, gap: 0.6, side: 0.15, shift: 1.6, look: 3, dv: 0.45, clear: 0.8, boost: 1.3, far: 13.6, edge: 15.2 }
-const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0.08, shift: 0.9, look: 0.9, dv: 0.15, clear: 0.35, boost: 1.25, far: 11.5, edge: 13.2, zone: 3.9 }
+const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0.08, shift: 0.9, look: 0.9, dv: 0.15, clear: 0.35, boost: 1.5, far: 11.5, edge: 13.2, zone: 3.9 }
 
 export const LANES = [1.8, 2.5] // where people walk, on each side of the crossroad
 
@@ -21,10 +22,13 @@ export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0,
 })
 
-const GREEN = 4 // seconds a road keeps the crossroad before it has to share it
+const GREEN = 5 // seconds a road keeps its green before it has to give way (if somebody is waiting)
+const YELLOW = 1.2
+const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in one go
 
+// the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
 export function makeTraffic() {
-  return { tok: { axis: null, last: 'z', hold: null, age: 0 }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, locks: new Map() }
+  return { sig: { axis: 'x', mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false } }
 }
 
 // ---------- shared by cars and people ----------
@@ -116,50 +120,58 @@ const toLine = (c) => -STOP - (pos(c) + c.hl) // how far the nose is from the st
 const inCrossroad = (c) => toLine(c) < 0 && pos(c) - c.hl < BOX + 0.15
 const committed = (c) => toLine(c) >= 0 && toLine(c) < (c.speed * c.speed) / (2 * CAR.hard) + 0.1 // too close to stop even with the brakes on full
 
-// the crossroad belongs to one road at a time. the other one waits at its line.
-function updateToken(cars, tr, dt) {
+// the signal: green for one road at a time. it only changes when somebody is waiting on the other road,
+// and only once the crossroad is empty (nobody is in it, nobody is too close to stop).
+function updateSignal(cars, walkers, tr, dt) {
   const busy = { x: 0, z: 0 }, want = { x: false, z: false }
   for (const c of cars) {
     if (!c.active) continue
     if (inCrossroad(c) || committed(c)) busy[c.axis]++
     else if (toLine(c) >= 0 && toLine(c) < 12) want[c.axis] = true
   }
-  const tok = tr.tok
-  if (tok.hold && (!tok.hold.active || !tok.hold.passing)) tok.hold = null
-  if (tok.hold) tok.axis = tok.hold.axis
-  else {
-    tok.age += dt
-    const done = tok.age >= GREEN || !want[tok.axis]
-    if (tok.axis && busy[tok.axis] === 0 && want[other(tok.axis)] && done) tok.axis = null
-    if (!tok.axis && (want.x || want.z)) {
-      tok.axis = want.x && want.z ? other(tok.last) : want.x ? 'x' : 'z'
-      tok.age = 0
-    }
-    if (tok.axis) tok.last = tok.axis
+  for (const w of walkers) {
+    if (w.inPlaza) busy[w.axis]++
+    else if (w.waiting) want[w.axis] = true
+  }
+  const sig = tr.sig
+  const o = other(sig.axis)
+  sig.age += dt
+  if (sig.hold && (!sig.hold.active || !sig.hold.passing)) sig.hold = null
+  if (sig.hold) sig.mode = 'green' // somebody is overtaking through the crossroad, nobody else goes now
+  else if (sig.mode === 'green') {
+    if (want[o] && !want[sig.axis] && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'red'; sig.age = 0 } // nobody on this road, hand over at once
+    else if (want[o] && sig.age >= GREEN) { sig.mode = 'yellow'; sig.age = 0 }
+  } else if (sig.mode === 'yellow') {
+    if (sig.age >= YELLOW && !busy[sig.axis]) { sig.mode = 'red'; sig.age = 0 }
+  } else if (sig.age >= 0.6) {
+    sig.axis = o
+    sig.mode = 'green'
+    sig.age = 0
   }
   tr.busy = busy
   tr.want = want
 }
 
+const greenFor = (sig, axis) => sig.mode === 'green' && sig.axis === axis
+
 function stepCar(c, cars, walkers, tr, dt) {
-  const tok = tr.tok
+  const sig = tr.sig
   updatePass(c, cars, CAR, (plan) => {
     const onCrossroad = plan.end > -STOP - 0.3 && plan.start < BOX + 0.3
     if (!onCrossroad) return true
     const o = other(c.axis)
-    if (tok.hold || tr.busy[o] || tr.want[o]) return false
-    tok.hold = c // nobody crosses while i am getting past
-    tok.axis = c.axis
+    if (sig.hold || !greenFor(sig, c.axis) || tr.busy[o]) return false
+    sig.hold = c // the light stays green until i am back in my lane
     return true
   })
 
   let lim = c.passing ? c.base * CAR.boost : c.base
   lim = Math.min(lim, followLimit(c, cars, CAR))
 
-  const go = (c.passing && tok.hold === c) || inCrossroad(c) || committed(c) || toLine(c) < 0 || (tok.axis === c.axis && (!tr.want[other(c.axis)] || tok.age < GREEN))
+  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || greenFor(sig, c.axis)
   if (!go) lim = Math.min(lim, brake(toLine(c) - 0.2, CAR.brake))
 
-  for (const w of walkers) { // people on the road have the right of way
+  for (const w of walkers) { // backup: if somebody is crossing my road anyway, stop for them
     if (!w.crossing || w.axis === c.axis) continue
     const at = c.dir * w.lat
     if (pos(c) - c.hl > at + 0.4) continue
@@ -224,7 +236,7 @@ export function placeWalkers(n, rng) {
     const axis = i % 2 ? 'x' : 'z'
     const side = i % 4 < 2 ? 1 : -1
     const dir = rng() > 0.5 ? 1 : -1
-    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.55 + rng() * 0.5, hl: 0.3, hw: 0.28, lat: 0, passing: null, crossing: false, held: new Set(), still: 0 }
+    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.55 + rng() * 0.5, hl: 0.3, hw: 0.28, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
     setLane(w)
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
@@ -237,79 +249,43 @@ export function placeWalkers(n, rng) {
   return out
 }
 
-// each corner next to the crossroad is shared by one footpath of each road. only one road at a time.
-const ZONES = [{ key: 'road', a: -1.8, b: 1.8 }, { s: -1, a: -3.4, b: -0.9 }, { s: 1, a: 0.9, b: 3.4 }]
-
-function cornerKey(w, s) {
-  return w.axis === 'x' ? s + ',' + w.side : w.side + ',' + s
-}
-
-// can i step onto the road here without a car getting to me?
-function gapInTraffic(w, cars) {
-  for (const c of cars) {
-    if (!c.active || c.axis === w.axis) continue
-    const at = c.dir * w.lat
-    if (pos(c) - c.hl > at + 0.4) continue // already went past
-    if (at - 0.4 - (pos(c) + c.hl) < (c.speed * c.speed) / (2 * CAR.brake) + 0.6) return false
-  }
-  return true
-}
-
-function takeCorner(w, key, tr, force) {
-  const lock = tr.locks.get(key)
-  if (!lock || lock.n === 0) { tr.locks.set(key, { axis: w.axis, n: 1 }); return true }
-  if (lock.axis === w.axis || force) { lock.n++; return true }
-  return false
-}
-
-// how fast i may go so that i stop at the edge of a corner or a road i am not allowed into yet
-function zoneLimit(w, cars, tr) {
-  let lim = Infinity
+// people may step into the crossroad area only on green. before that they wait at the kerb, never on the road.
+function plazaLimit(w, sig) {
   const lo = w.t - w.hl, hi = w.t + w.hl
-  for (const z of ZONES) {
-    const inside = hi > z.a && lo < z.b
-    const toEdge = w.dir > 0 ? z.a - hi : lo - z.b
-    const key = z.key || cornerKey(w, z.s)
-    const has = w.held.has(key)
-    if (inside || (toEdge >= 0 && toEdge < 0.5)) {
-      if (has) continue
-      const ok = z.key ? gapInTraffic(w, cars) : takeCorner(w, key, tr, false)
-      if (ok || inside) {
-        if (!z.key && !ok) takeCorner(w, key, tr, true)
-        w.held.add(key)
-      } else lim = Math.min(lim, brake(toEdge - 0.15, WALK.brake)) // stop just short of it
-    } else if (has) {
-      if (!z.key) tr.locks.get(key).n--
-      w.held.delete(key)
-    }
-  }
-  w.crossing = w.held.has('road')
-  return lim
+  w.inPlaza = hi > -PLAZA && lo < PLAZA
+  w.crossing = w.inPlaza
+  w.waiting = false
+  if (w.inPlaza) return w.base * WALK.boost // already on the way over, hurry a little
+  const toEdge = w.dir > 0 ? -PLAZA - hi : lo - PLAZA
+  if (toEdge < 0 || toEdge > 1.5 || greenFor(sig, w.axis)) return Infinity
+  w.waiting = true
+  return brake(toEdge - 0.15, WALK.brake)
 }
 
 function turnAround(w) {
   w.dir = -w.dir
+  w.waiting = false
   w.t = Math.max(-WALK.edge, Math.min(WALK.edge, w.t))
   w.passing = null
   w.still = 0
   setLane(w)
 }
 
-function stepWalker(w, walkers, cars, tr, dt) {
+function stepWalker(w, walkers, tr, dt) {
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
-  lim = Math.min(lim, followLimit(w, walkers, WALK), zoneLimit(w, cars, tr))
+  lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig))
   w.speed = approach(w, lim, WALK, dt)
   slide(w, walkers, WALK, dt)
   w.t += w.dir * w.speed * dt
-  w.still = w.speed < 0.03 ? w.still + dt : 0
+  w.still = w.speed < 0.03 && !w.waiting ? w.still + dt : 0
   if (Math.abs(w.t) > WALK.edge || w.still > 20) turnAround(w)
 }
 
 // ---------- one step for everybody ----------
 
 export function stepTraffic(cars, walkers, tr, dt) {
-  for (const w of walkers) stepWalker(w, walkers, cars, tr, dt)
-  updateToken(cars, tr, dt)
+  for (const w of walkers) stepWalker(w, walkers, tr, dt)
+  updateSignal(cars, walkers, tr, dt)
   for (const c of cars) if (c.active) stepCar(c, cars, walkers, tr, dt)
 }

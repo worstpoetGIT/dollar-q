@@ -227,7 +227,7 @@ function makeTruck(color = 0xf08a24) {
   return g
 }
 
-function makePerson(rng) {
+function makePerson(rng, female = false) {
   const g = new THREE.Group()
   const skin = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac][Math.floor(rng() * 5)]
   const legs = [], arms = [], thighs = [], shins = [], sleeves = [], hands = []
@@ -239,15 +239,23 @@ function makePerson(rng) {
     bx(leg, 0.13, 0.05, 0.2, 0x2b2b2b, 0, -0.44, 0.03)
     g.add(leg); legs.push(leg)
     const arm = new THREE.Group()
-    arm.position.set(sx * 0.23, 0.82, 0)
+    arm.position.set(sx * (female ? 0.2 : 0.23), 0.82, 0)
     sleeves.push(bx(arm, 0.1, 0.26, 0.11, 0xff6b6b, 0, -0.26, 0))
     hands.push(bx(arm, 0.09, 0.1, 0.1, skin, 0, -0.36, 0))
     g.add(arm); arms.push(arm)
   }
-  const torso = bx(g, 0.34, 0.4, 0.2, 0xff6b6b, 0, 0.44, 0)
+  const torso = bx(g, female ? 0.29 : 0.34, 0.4, 0.2, 0xff6b6b, 0, 0.44, 0)
   const head = mk(g, new THREE.SphereGeometry(0.15, 10, 8), skin, 0, 1.0, 0)
   const hat = mk(g, new THREE.SphereGeometry(0.17, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xd62828, 0, 1.03, 0)
-  g.userData = { torso, head, hat, skin, legs, arms, thighs, shins, sleeves, hands }
+  let skirt = null
+  const hair = []
+  if (female) {
+    skirt = mk(g, new THREE.CylinderGeometry(0.17, 0.27, 0.34, 10), 0xd62828, 0, 0.36, 0)
+    const color = [0x1b1b1b, 0x3b2314, 0x6b3f1d, 0xc9a24b, 0x8a1c1c][Math.floor(rng() * 5)]
+    hair.push(mk(g, new THREE.SphereGeometry(0.168, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55), color, 0, 1.0, -0.015))
+    hair.push(bx(g, 0.28, 0.4, 0.1, color, 0, 0.62, -0.13)) // long hair down the back
+  }
+  g.userData = { torso, head, hat, skin, legs, arms, thighs, shins, sleeves, hands, skirt, hair }
   g.scale.setScalar(1.05)
   return g
 }
@@ -418,6 +426,7 @@ export class CityScene {
         this.lamp(sg * 1.62, i)
       }
     }
+    this.buildSignals()
     // decor cells
     const [dx, dz] = DECOR
     const cells = [[-dx, -dz], [dx, -dz], [-dx, dz], [dx, dz]]
@@ -500,6 +509,39 @@ export class CityScene {
     for (const sg of [-1, 1]) {
       cyl(s, 0.05, 1.7, 0xcbd5e1, x + sg * 2.0, 0.1, z, 5)
       bx(s, 0.05, 0.6, 0.8, 0xffffff, x + sg * 1.9, 1.5, z)
+    }
+  }
+
+  // a traffic light for every way into the crossroad: on the right-hand kerb, just past the stop line
+  buildSignals() {
+    const spots = [[3.6, -2.95, 0, 'x'], [-3.6, 2.95, Math.PI, 'x'], [2.95, 3.6, -Math.PI / 2, 'z'], [-2.95, -3.6, Math.PI / 2, 'z']]
+    this.signals = []
+    for (const [x, z, face, axis] of spots) {
+      const g = new THREE.Group()
+      cyl(g, 0.07, 2.1, this.T.c.lampPole, 0, 0, 0, 6)
+      bx(g, 0.26, 0.74, 0.3, 0x1d1f24, 0.1, 1.55, 0)
+      const mats = LIT.map((c, i) => {
+        const m = new THREE.MeshBasicMaterial({ color: c })
+        mk(g, new THREE.SphereGeometry(0.085, 8, 6), m, 0.25, 2.12 - i * 0.24, 0, false)
+        return m
+      })
+      g.position.set(x, 0.15, z)
+      g.rotation.y = face
+      this.world.add(g)
+      this.signals.push({ axis, mats })
+    }
+    this.signalKey = null
+  }
+
+  // red on top, yellow, green below: light up the one that is on
+  paintSignals() {
+    const sig = this.traffic.sig
+    const key = sig.axis + sig.mode
+    if (key === this.signalKey) return
+    this.signalKey = key
+    for (const h of this.signals) {
+      const on = h.axis !== sig.axis || sig.mode === 'red' ? 0 : sig.mode === 'yellow' ? 1 : 2
+      h.mats.forEach((m, i) => m.color.setHex(i === on ? LIT[i] : OFF[i]))
     }
   }
 
@@ -589,8 +631,9 @@ export class CityScene {
     const P = this.T.people
     this.walkers = placeWalkers(8, rng)
     for (const w of this.walkers) {
-      const p = makePerson(rng)
-      Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
+      const female = [1, 2, 4, 7].includes(w.id) // four of the eight, one on every footpath
+      const p = makePerson(rng, female)
+      Object.assign(w, { p, female, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
       const u = p.userData
       if (P.skin) { u.skin = P.skin; u.head.material.color.set(P.skin); u.hands.forEach((h) => h.material.color.set(P.skin)) }
       const coat = P.coats[w.ci % P.coats.length]
@@ -598,7 +641,8 @@ export class CityScene {
       u.torso.material.color.set(coat)
       u.sleeves.forEach((mm) => mm.material.color.set(coat))
       u.thighs.forEach((mm) => mm.material.color.set(pants))
-      u.shins.forEach((mm) => mm.material.color.set(P.shorts ? u.skin : pants))
+      u.shins.forEach((mm) => mm.material.color.set(P.shorts || female ? u.skin : pants))
+      if (u.skirt) u.skirt.material.color.set(pants)
       u.hat.visible = !!P.hat
       if (P.hat) u.hat.material.color.set(P.hats ? P.hats[w.ci % P.hats.length] : P.hat)
       this.world.add(p)
@@ -1076,6 +1120,7 @@ export class CityScene {
 
     // the traffic rules decide who goes where, this just moves the models
     stepTraffic(this.cars, this.walkers, this.traffic, dt)
+    this.paintSignals()
     for (const w of this.walkers) {
       w.ph += dt * w.speed * 7 // the stride follows how fast they really go, so waiting people stand still
       const k = Math.min(1, w.speed * 4)
@@ -1140,3 +1185,6 @@ export class CityScene {
 }
 
 const DIM = new THREE.Color(0x9a9a98)
+// traffic light colours: red, yellow, green, lit and switched off
+const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]
+const OFF = [0x3a0d0d, 0x3a2e00, 0x0d3a1a]

@@ -33,7 +33,8 @@ function simulate(name, seed, minutes, dt) {
   const walkers = placeWalkers(8, rng)
   const tr = makeTraffic()
   for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
-  const out = { crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0 }
+  const out = { crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0, standing: 0, carsWaiting: 0, carTime: 0 }
+  const still = walkers.map(() => 0)
   const was = new Map()
   let spawnIn = 0.4
   for (let step = 0; step < (minutes * 60) / dt; step++) {
@@ -42,6 +43,11 @@ function simulate(name, seed, minutes, dt) {
     const walkedBefore = walkers.map((w) => w.t)
     const wasOn = cars.map((c) => c.active)
     stepTraffic(cars, walkers, tr, dt)
+    walkers.forEach((w, i) => { // anybody standing about on the crossroad?
+      still[i] = w.inPlaza && w.speed < 0.03 ? still[i] + dt : 0
+      out.standing = Math.max(out.standing, still[i])
+    })
+    for (const c of cars) if (c.active) { out.carTime++; if (c.speed < 0.05) out.carsWaiting++ }
     cars.forEach((c, i) => { if (wasOn[i] && !c.active) { out.trips++; out.lastTrip = step * dt } })
     walkers.forEach((w, i) => { out.walked += Math.abs(w.t - walkedBefore[i]) })
     for (const c of cars) {
@@ -76,6 +82,19 @@ describe('traffic: nothing ever runs into anything', () => {
       }
     }, 120000)
   }
+})
+
+describe('traffic: the signal', () => {
+  it('nobody stands about on the crossroad waiting for something', () => {
+    for (const name of ['city', 'japan', 'ice']) {
+      for (const seed of [1, 2, 3, 4]) expect(simulate(name, seed, 8, 1 / 30).standing).toBeLessThan(1.5)
+    }
+  }, 120000)
+
+  it('cars wait at the light, but not most of the time', () => {
+    const r = simulate('city', 11, 10, 1 / 30)
+    expect(r.carsWaiting / r.carTime).toBeLessThan(0.5)
+  }, 60000)
 })
 
 describe('traffic: things still get done', () => {
