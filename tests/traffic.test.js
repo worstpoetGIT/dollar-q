@@ -33,7 +33,7 @@ function simulate(name, seed, minutes, dt) {
   const walkers = placeWalkers(8, rng)
   const tr = makeTraffic()
   for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
-  const out = { offPavement: 0, crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0, standing: 0, carsWaiting: 0, carTime: 0 }
+  const out = { crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0, standing: 0, carsWaiting: 0, carTime: 0 }
   const still = walkers.map(() => 0)
   const was = new Map()
   let spawnIn = 0.4
@@ -43,7 +43,6 @@ function simulate(name, seed, minutes, dt) {
     const walkedBefore = walkers.map((w) => w.t)
     const wasOn = cars.map((c) => c.active)
     stepTraffic(cars, walkers, tr, dt)
-    for (const w of walkers) if (Math.abs(w.lat) - w.hw < 1.46 || Math.abs(w.lat) + w.hw > 2.43) out.offPavement++
     walkers.forEach((w, i) => { // anybody standing about on the crossroad?
       still[i] = w.inPlaza && w.speed < 0.03 ? still[i] + dt : 0
       out.standing = Math.max(out.standing, still[i])
@@ -83,14 +82,6 @@ describe('traffic: nothing ever runs into anything', () => {
       }
     }, 120000)
   }
-})
-
-describe('traffic: people', () => {
-  it('walk on the pavement only, all at the same normal speed', () => {
-    const w = placeWalkers(8, seeded(3))
-    expect(new Set(w.map((x) => x.base)).size).toBe(1)
-    for (const seed of [1, 2, 3, 4]) expect(simulate('city', seed, 6, 1 / 30).offPavement).toBe(0)
-  }, 60000)
 })
 
 describe('traffic: the signal', () => {

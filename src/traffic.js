@@ -14,10 +14,9 @@ export const STOP = 3.4 // cars wait this far from the middle of the crossroad
 const BOX = 1.5 // half the width of a road
 
 const CAR = { brake: 3.5, accel: 2.6, hard: 6.5, gap: 0.6, side: 0.15, shift: 1.6, look: 3, dv: 0.45, clear: 0.8, boost: 1.3, far: 13.6, edge: 15.2 }
-const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0, shift: 0.9, look: 0.9, dv: 0.15, clear: 0.35, boost: 1.25, far: 11.5, edge: 13.2, zone: 3.9 }
-const SPEED = 1 // everybody walks the same, at a normal pace
+const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0.08, shift: 0.9, look: 0.9, dv: 0.15, clear: 0.35, boost: 1.5, far: 11.5, edge: 13.2, zone: 3.9 }
 
-export const LANES = [1.7, 2.18] // the two lanes of the pavement along each road (it is 1.5 to 2.42 wide)
+export const LANES = [1.8, 2.5] // where people walk, on each side of the crossroad
 
 export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0,
@@ -237,7 +236,7 @@ export function placeWalkers(n, rng) {
     const axis = i % 2 ? 'x' : 'z'
     const side = i % 4 < 2 ? 1 : -1
     const dir = rng() > 0.5 ? 1 : -1
-    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: SPEED, hl: 0.3, hw: 0.22, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
+    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.55 + rng() * 0.5, hl: 0.3, hw: 0.28, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
     setLane(w)
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
@@ -256,7 +255,7 @@ function plazaLimit(w, sig) {
   w.inPlaza = hi > -PLAZA && lo < PLAZA
   w.crossing = w.inPlaza
   w.waiting = false
-  if (w.inPlaza) return w.base // already on the way over
+  if (w.inPlaza) return w.base * WALK.boost // already on the way over, hurry a little
   const toEdge = w.dir > 0 ? -PLAZA - hi : lo - PLAZA
   if (toEdge < 0 || toEdge > 1.5 || greenFor(sig, w.axis)) return Infinity
   w.waiting = true

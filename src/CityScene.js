@@ -239,7 +239,7 @@ function makePerson(rng, female = false) {
     bx(leg, 0.13, 0.05, 0.2, 0x2b2b2b, 0, -0.44, 0.03)
     g.add(leg); legs.push(leg)
     const arm = new THREE.Group()
-    arm.position.set(sx * (female ? 0.18 : 0.2), 0.82, 0)
+    arm.position.set(sx * (female ? 0.2 : 0.23), 0.82, 0)
     sleeves.push(bx(arm, 0.1, 0.26, 0.11, 0xff6b6b, 0, -0.26, 0))
     hands.push(bx(arm, 0.09, 0.1, 0.1, skin, 0, -0.36, 0))
     g.add(arm); arms.push(arm)
@@ -375,15 +375,6 @@ export class CityScene {
     for (const [w, d] of [[30, 3], [3, 30]]) {
       const r = mk(s, new THREE.BoxGeometry(w, 0.06, d), C.road, 0, 0.03, 0, false)
       if (w === 3) r.position.y = 0.035
-    }
-    // pavement along the roads. people walk on this and nowhere else
-    const pave = shade(C.pad, -0.14)
-    for (const sg of [-1, 1]) {
-      for (const hf of [-1, 1]) {
-        const mid = hf * (1.5 + 13.5 / 2)
-        mk(s, new THREE.BoxGeometry(13.5, 0.05, 0.92), pave, mid, 0.1, sg * 1.96, false)
-        mk(s, new THREE.BoxGeometry(0.92, 0.05, 13.5), pave, sg * 1.96, 0.102, mid, false)
-      }
     }
     if (T.dashes) {
       const dash = M(C.dash), cross = M(C.cross)
@@ -521,24 +512,40 @@ export class CityScene {
     }
   }
 
-  // a traffic light for every way into the crossroad: on the right-hand kerb, just past the stop line
+  // one traffic light in the middle of the crossroad, with a head facing every way in.
+  // the middle is the one spot no car or person uses, so it stays in the way of nobody.
   buildSignals() {
-    const spots = [[3.6, -2.95, 0, 'x'], [-3.6, 2.95, Math.PI, 'x'], [2.95, 3.6, -Math.PI / 2, 'z'], [-2.95, -3.6, Math.PI / 2, 'z']]
+    const S = this.T.signal
+    const g = new THREE.Group()
+    const H = 2.5
+    if (S.shaft === 'bricks') {
+      for (let i = 0; i < 6; i++) bx(g, 0.3, H / 6, 0.3, S.bricks[i % S.bricks.length], 0, (i * H) / 6, 0)
+    } else cyl(g, S.shaft === 'log' ? 0.11 : 0.07, H, S.pole, 0, 0, 0, S.shaft === 'log' ? 7 : 8)
+    if (S.base) bx(g, 0.26, 0.14, 0.26, S.base, 0, 0, 0)
+    if (S.cap) mk(g, new THREE.SphereGeometry(0.13, 8, 6), S.cap, 0, H + 0.1, 0)
+
     this.signals = []
-    for (const [x, z, face, axis] of spots) {
-      const g = new THREE.Group()
-      cyl(g, 0.07, 2.1, this.T.c.lampPole, 0, 0, 0, 6)
-      bx(g, 0.26, 0.74, 0.3, 0x1d1f24, 0.1, 1.55, 0)
+    // which way each head faces, and which road's cars it is for
+    for (const [face, axis] of [[0, 'x'], [Math.PI, 'x'], [-Math.PI / 2, 'z'], [Math.PI / 2, 'z']]) {
+      const head = new THREE.Group()
+      bx(head, 0.1, 0.06, 0.06, S.pole || S.head, 0.1, 1.95, 0) // arm out to the head
+      bx(head, 0.22, 0.8, 0.3, S.head, 0.3, 1.6, 0)
+      if (S.rim) bx(head, 0.02, 0.86, 0.36, S.rim, 0.19, 1.57, 0)
+      if (S.roof) bx(head, 0.3, 0.05, 0.38, S.roof, 0.3, 2.4, 0)
       const mats = LIT.map((c, i) => {
         const m = new THREE.MeshBasicMaterial({ color: c })
-        mk(g, new THREE.SphereGeometry(0.085, 8, 6), m, 0.25, 2.12 - i * 0.24, 0, false)
+        const y = 2.24 - i * 0.24
+        if (S.lamp === 'disc') mk(head, new THREE.CylinderGeometry(0.09, 0.09, 0.05, 10), m, 0.43, y, 0, false).rotation.z = Math.PI / 2
+        else if (S.lamp === 'box') mk(head, new THREE.BoxGeometry(0.05, 0.15, 0.15), m, 0.43, y, 0, false)
+        else mk(head, new THREE.SphereGeometry(0.085, 8, 6), m, 0.43, y, 0, false)
         return m
       })
-      g.position.set(x, 0.15, z)
-      g.rotation.y = face
-      this.world.add(g)
+      head.rotation.y = face
+      g.add(head)
       this.signals.push({ axis, mats })
     }
+    g.position.set(0, 0.07, 0)
+    this.world.add(g)
     this.signalKey = null
   }
 
