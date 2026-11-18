@@ -85,6 +85,29 @@ describe('traffic: nothing ever runs into anything', () => {
 })
 
 describe('traffic: the signal', () => {
+  it('goes green, yellow, red, then the other road gets green: yellow is never skipped', () => {
+    const rng = seeded(5)
+    const cars = fleet('city')
+    const walkers = placeWalkers(8, rng)
+    const tr = makeTraffic()
+    for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
+    const seen = new Set()
+    let spawnIn = 0.4, last = 'x-green', jumps = 0
+    for (let step = 0; step < 60 * 20 * 30; step++) {
+      spawnIn -= 1 / 30
+      if (spawnIn <= 0) { spawnIn = 1.8 + rng() * 2.6; spawnCar(cars, rng) }
+      stepTraffic(cars, walkers, tr, 1 / 30)
+      const now = tr.sig.axis + '-' + tr.sig.mode
+      if (now !== last) {
+        seen.add(last + ' > ' + now)
+        if (last.endsWith('green') && !now.endsWith('yellow')) jumps++
+        last = now
+      }
+    }
+    expect(jumps).toBe(0)
+    expect([...seen].some((s) => s.endsWith('yellow'))).toBe(true)
+  }, 60000)
+
   it('nobody stands about on the crossroad waiting for something', () => {
     for (const name of ['city', 'japan', 'ice']) {
       for (const seed of [1, 2, 3, 4]) expect(simulate(name, seed, 8, 1 / 30).standing).toBeLessThan(1.5)

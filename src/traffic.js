@@ -23,7 +23,7 @@ export const newCar = (hl, hw) => ({
 })
 
 const GREEN = 5 // seconds a road keeps its green before it has to give way (if somebody is waiting)
-const YELLOW = 1.2
+const YELLOW = 2.2 // every green ends with a yellow, cars that can still stop do, the others carry on through
 const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in one go
 
 // the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
@@ -139,7 +139,7 @@ function updateSignal(cars, walkers, tr, dt) {
   if (sig.hold && (!sig.hold.active || !sig.hold.passing)) sig.hold = null
   if (sig.hold) sig.mode = 'green' // somebody is overtaking through the crossroad, nobody else goes now
   else if (sig.mode === 'green') {
-    if (want[o] && !want[sig.axis] && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'red'; sig.age = 0 } // nobody on this road, hand over at once
+    if (want[o] && !want[sig.axis] && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // nobody on this road, hand over soon
     else if (want[o] && sig.age >= GREEN) { sig.mode = 'yellow'; sig.age = 0 }
   } else if (sig.mode === 'yellow') {
     if (sig.age >= YELLOW && !busy[sig.axis]) { sig.mode = 'red'; sig.age = 0 }
