@@ -227,7 +227,7 @@ function makeTruck(color = 0xf08a24) {
   return g
 }
 
-function makePerson(rng, female = false) {
+function makePerson(rng) {
   const g = new THREE.Group()
   const skin = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac][Math.floor(rng() * 5)]
   const legs = [], arms = [], thighs = [], shins = [], sleeves = [], hands = []
@@ -239,23 +239,15 @@ function makePerson(rng, female = false) {
     bx(leg, 0.13, 0.05, 0.2, 0x2b2b2b, 0, -0.44, 0.03)
     g.add(leg); legs.push(leg)
     const arm = new THREE.Group()
-    arm.position.set(sx * (female ? 0.2 : 0.23), 0.82, 0)
+    arm.position.set(sx * 0.23, 0.82, 0)
     sleeves.push(bx(arm, 0.1, 0.26, 0.11, 0xff6b6b, 0, -0.26, 0))
     hands.push(bx(arm, 0.09, 0.1, 0.1, skin, 0, -0.36, 0))
     g.add(arm); arms.push(arm)
   }
-  const torso = bx(g, female ? 0.29 : 0.34, 0.4, 0.2, 0xff6b6b, 0, 0.44, 0)
+  const torso = bx(g, 0.34, 0.4, 0.2, 0xff6b6b, 0, 0.44, 0)
   const head = mk(g, new THREE.SphereGeometry(0.15, 10, 8), skin, 0, 1.0, 0)
   const hat = mk(g, new THREE.SphereGeometry(0.17, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xd62828, 0, 1.03, 0)
-  let skirt = null
-  const hair = []
-  if (female) {
-    skirt = mk(g, new THREE.CylinderGeometry(0.17, 0.27, 0.34, 10), 0xd62828, 0, 0.36, 0)
-    const color = [0x1b1b1b, 0x3b2314, 0x6b3f1d, 0xc9a24b, 0x8a1c1c][Math.floor(rng() * 5)]
-    hair.push(mk(g, new THREE.SphereGeometry(0.168, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55), color, 0, 1.0, -0.015))
-    hair.push(bx(g, 0.28, 0.4, 0.1, color, 0, 0.62, -0.13)) // long hair down the back
-  }
-  g.userData = { torso, head, hat, skin, legs, arms, thighs, shins, sleeves, hands, skirt, hair }
+  g.userData = { torso, head, hat, skin, legs, arms, thighs, shins, sleeves, hands }
   g.scale.setScalar(1.05)
   return g
 }
@@ -647,9 +639,8 @@ export class CityScene {
     const P = this.T.people
     this.walkers = placeWalkers(8, rng)
     for (const w of this.walkers) {
-      const female = [1, 2, 4, 7].includes(w.id) // four of the eight, one on every footpath
-      const p = makePerson(rng, female)
-      Object.assign(w, { p, female, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
+      const p = makePerson(rng)
+      Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
       const u = p.userData
       if (P.skin) { u.skin = P.skin; u.head.material.color.set(P.skin); u.hands.forEach((h) => h.material.color.set(P.skin)) }
       const coat = P.coats[w.ci % P.coats.length]
@@ -657,8 +648,7 @@ export class CityScene {
       u.torso.material.color.set(coat)
       u.sleeves.forEach((mm) => mm.material.color.set(coat))
       u.thighs.forEach((mm) => mm.material.color.set(pants))
-      u.shins.forEach((mm) => mm.material.color.set(P.shorts || female ? u.skin : pants))
-      if (u.skirt) u.skirt.material.color.set(pants)
+      u.shins.forEach((mm) => mm.material.color.set(P.shorts ? u.skin : pants))
       u.hat.visible = !!P.hat
       if (P.hat) u.hat.material.color.set(P.hats ? P.hats[w.ci % P.hats.length] : P.hat)
       this.world.add(p)
