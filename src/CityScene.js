@@ -239,7 +239,7 @@ function makePerson(rng) {
     bx(leg, 0.13, 0.05, 0.2, 0x2b2b2b, 0, -0.44, 0.03)
     g.add(leg); legs.push(leg)
     const arm = new THREE.Group()
-    arm.position.set(sx * 0.23, 0.82, 0)
+    arm.position.set(sx * 0.2, 0.82, 0)
     sleeves.push(bx(arm, 0.1, 0.26, 0.11, 0xff6b6b, 0, -0.26, 0))
     hands.push(bx(arm, 0.09, 0.1, 0.1, skin, 0, -0.36, 0))
     g.add(arm); arms.push(arm)
@@ -367,6 +367,15 @@ export class CityScene {
     for (const [w, d] of [[30, 3], [3, 30]]) {
       const r = mk(s, new THREE.BoxGeometry(w, 0.06, d), C.road, 0, 0.03, 0, false)
       if (w === 3) r.position.y = 0.035
+    }
+    // pavement along the roads. people walk on this and nowhere else
+    const pave = shade(C.pad, -0.14)
+    for (const sg of [-1, 1]) {
+      for (const hf of [-1, 1]) {
+        const mid = hf * (1.5 + 13.5 / 2)
+        mk(s, new THREE.BoxGeometry(13.5, 0.05, 0.92), pave, mid, 0.1, sg * 1.96, false)
+        mk(s, new THREE.BoxGeometry(0.92, 0.05, 13.5), pave, sg * 1.96, 0.102, mid, false)
+      }
     }
     if (T.dashes) {
       const dash = M(C.dash), cross = M(C.cross)
