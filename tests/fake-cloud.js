@@ -1,5 +1,7 @@
 // a small stand-in for the server, with the same rules: the newest edit of a record wins, an older one is ignored,
 // every accepted write gets the next number, and a phone asks for "everything after number n".
+import { ApiError } from '../src/sync/api.js'
+
 export function fakeCloud({ reject = () => false } = {}) {
   const rows = new Map() // "kind:id" -> { seq, kind, id, updatedAt, deleted, data }
   let seq = 0
@@ -9,7 +11,7 @@ export function fakeCloud({ reject = () => false } = {}) {
   const api = {
     async push(changes) {
       calls.push++
-      if (down.value) throw Object.assign(new Error('no connection'), { status: 0 })
+      if (down.value) throw new ApiError(0, 'no connection')
       let applied = 0
       const rejected = []
       changes.forEach((ch, index) => {
@@ -24,11 +26,12 @@ export function fakeCloud({ reject = () => false } = {}) {
     },
     async pull(since, limit) {
       calls.pull++
-      if (down.value) throw Object.assign(new Error('no connection'), { status: 0 })
+      if (down.value) throw new ApiError(0, 'no connection')
       const all = [...rows.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq)
       const page = all.slice(0, limit)
       return { changes: page.map((r) => ({ ...r })), cursor: page.length ? page.at(-1).seq : since, more: all.length > limit }
     },
   }
-  return { api, rows, calls, down, size: () => [...rows.values()].filter((r) => !r.deleted).length }
+  const size = (kind = 'expense') => [...rows.values()].filter((r) => !r.deleted && r.kind === kind).length 
+  return { api, rows, calls, down, size }
 }
