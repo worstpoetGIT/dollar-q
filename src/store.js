@@ -2,6 +2,9 @@ import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareOf } from './util.js'
+import { openNativeDb } from './db/native.js'
+import { ensureSchema } from './db/schema.js'
+import { loadState, saveDiff, importState, isEmpty, counts, getMeta, setMeta } from './db/repo.js'
 
 const KEY = 'dollar-q:v1'
 
@@ -147,25 +150,86 @@ const subscribe = (l) => { listeners.add(l); return () => listeners.delete(l) }
 const emit = () => listeners.forEach((l) => l())
 // in the phone app everything is also saved to native storage, iOS can wipe web storage
 const NATIVE = Capacitor.isNativePlatform()
+
+// the phone's database (see further down). declared early because saving a change needs to know about it.
+let db = null // set once the database is open and in step with `state`
+let saved = state // the state the database holds right now, to work out what changed
+let touched = false // did something change before the database was ready?
+let writes = Promise.resolve() // changes are written one after the other, in order
+const BROKEN = KEY + ':db-broken'
+
 const persist = () => {
   const json = JSON.stringify(state)
   try { localStorage.setItem(KEY, json) } catch { /* private mode */ }
   if (NATIVE) Preferences.set({ key: KEY, value: json }).catch(() => {})
+  if (db) { writeToDb(saved, state); saved = state }
 }
 
 if (migratedAtLoad && state.entered) persist() // write the converted expenses straight back
 
-if (NATIVE) {
-  // web storage cleared? take the native copy
-  Preferences.get({ key: KEY }).then(({ value }) => {
-    if (!value) { if (state.entered) persist(); return }
-    const saved = sanitize(JSON.parse(value))
-    if (saved.entered && (!state.entered || saved.expenses.length > state.expenses.length)) { state = saved; persist(); emit() }
-  }).catch(() => {})
+// web storage cleared? take the native copy
+const restored = !NATIVE ? Promise.resolve() : Preferences.get({ key: KEY }).then(({ value }) => {
+  if (!value) { if (state.entered) persist(); return }
+  const copy = sanitize(JSON.parse(value))
+  if (copy.entered && (!state.entered || copy.expenses.length > state.expenses.length)) { state = copy; persist(); emit() }
+}).catch(() => {})
+
+// ---------- the phone's database ----------
+// the database is the main copy of the data. the old saved copy above is still written on every change (a mirror),
+// so going back to an older version of the app never loses anything.
+
+function writeToDb(before, next) {
+  writes = writes.then(() => saveDiff(db, before, next)).catch((err) => {
+    // never lose data over this: the mirror above has everything, and next start rebuilds the database from it
+    console.error('database write failed, it will be rebuilt from the saved copy on the next start', err)
+    try { localStorage.setItem(BROKEN, '1') } catch { /* ignore */ }
+    db = null
+  })
 }
+
+export async function startDatabase(open) {
+  if (db) return
+  try {
+    const d = await open()
+    if (!d) return // not a phone: no database, the app works as before
+    await ensureSchema(d)
+    let broken = false
+    try { broken = !!localStorage.getItem(BROKEN) } catch { /* ignore */ }
+
+    if (!(await getMeta(d, 'legacy_imported')) || broken || (await isEmpty(d))) {
+      // first start with a database (or a rebuild): move the saved data in, then check nothing went missing
+      const mine = state
+      await d.tx(async (c) => {
+        for (const t of ['counties', 'accounts', 'fixed_expenses', 'expenses', 'settings']) await c.run(`delete from ${t}`)
+      })
+      await importState(d, mine)
+      const n = await counts(d)
+      if (n.expenses !== mine.expenses.length || n.counties !== mine.counties.length || n.accounts !== mine.accounts.length || n.fixed !== mine.fixed.length) {
+        throw new Error('the copy in the database does not match the saved data')
+      }
+      await setMeta(d, 'legacy_imported', new Date().toISOString())
+      try { localStorage.removeItem(BROKEN) } catch { /* ignore */ }
+      saved = mine
+    } else {
+      const fromDb = await loadState(d, initial())
+      if (touched) { await saveDiff(d, fromDb, state); saved = state } // the user changed something while it was starting
+      else { state = fromDb; saved = fromDb; emit() }
+    }
+    db = d
+    if (state !== saved) { writeToDb(saved, state); saved = state } // anything changed while we were busy
+  } catch (err) {
+    console.error('could not start the database, the app keeps using its saved copy', err)
+  }
+}
+
+// resolves when the database is open (or we know there is none). things that write, like the monthly subscriptions, wait for it.
+export const ready = restored.then(() => startDatabase(openNativeDb))
+export const getDb = () => db
+export const flushDatabase = () => writes // resolves when every change so far is in the database
 
 export const getState = () => state
 export function setState(fn) {
+  touched = true
   state = typeof fn === 'function' ? fn(state) : { ...state, ...fn }
   persist()
   emit()
@@ -174,6 +238,7 @@ export const useStore = () => useSyncExternalStore(subscribe, getState)
 
 // import replaces everything, the old data is kept once for undo
 export function replaceState(next) {
+  touched = true
   try { localStorage.setItem(KEY + ':before-import', JSON.stringify(state)) } catch { /* ignore */ }
   state = sanitize(next)
   persist()
@@ -183,6 +248,7 @@ export function undoImport() {
   try {
     const prev = JSON.parse(localStorage.getItem(KEY + ':before-import'))
     if (!prev) return false
+    touched = true
     state = sanitize(prev)
     persist()
     emit()
@@ -241,7 +307,8 @@ export function runFixed() {
       if (!d) return f
       const acc = s.accounts.find((a) => a.id === f.accountId) || s.accounts[0]
       exps.push({
-        id: uid(), countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
+        id: 'fx-' + f.id + '-' + ym, // the same on every phone, so two phones posting the same month do not make two expenses
+        countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
         methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
         note: f.name, ts: new Date(now.getFullYear(), now.getMonth(), d.day, 9).getTime(), fixedId: f.id,
       })

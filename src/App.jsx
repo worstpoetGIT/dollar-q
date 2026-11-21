@@ -8,7 +8,7 @@ import History from './components/History.jsx'
 import Profile from './components/Profile.jsx'
 import AddSheet from './components/AddSheet.jsx'
 import { NameStep, Wizard } from './components/Onboarding.jsx'
-import { useStore, setState, runFixed } from './store.js'
+import { useStore, setState, runFixed, ready } from './store.js'
 import { fmt } from './util.js'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar } from '@capacitor/status-bar'
@@ -46,7 +46,7 @@ export default function App() {
   }, [s.minimal])
 
   useEffect(() => {
-    runFixed()
+    ready.then(runFixed) // after the database is open, so the new expenses are saved in it too
     const h = () => document.visibilityState === 'visible' && runFixed()
     document.addEventListener('visibilitychange', h)
     return () => document.removeEventListener('visibilitychange', h)
