@@ -14,9 +14,17 @@ export const STOP = 3.4 // cars wait this far from the middle of the crossroad
 const BOX = 1.5 // half the width of a road
 
 const CAR = { brake: 3.5, accel: 2.6, hard: 6.5, gap: 0.6, side: 0.15, shift: 1.6, look: 3, dv: 0.45, clear: 0.8, boost: 1.3, far: 13.6, edge: 15.2 }
-const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0, shift: 0.9, look: 0.9, dv: 0.15, clear: 0.35, boost: 1.5, far: 11.5, edge: 13.2, zone: 3.9 }
+const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0, squeeze: 0.52, shift: 0.9, look: 0.9, dv: 0.15, clear: 0.35, boost: 1.5, far: 11.5, edge: 13.2, zone: 3.9 }
 
-export const LANES = [1.7, 2.18] // the two lanes of the pavement along each road. it runs from the road edge (1.5) to the lot borders (2.45)
+// the footpath along a road runs from the road edge to the coloured line round the lots beside it. the lines are
+// 2.45 from the middle of the road (the lot is 4.9 across and its middle is 4.9 out) when a lot is fully grown, and
+// further out while it is small, so a small lot leaves more room. people keep to two lanes and never stand on a line.
+export const LOT_HALF = 2.45
+export const LOT_SMALL = 0.85 // how big a lot is while it is still in its first stage (1 is fully grown)
+const LOT_MIDDLE = 4.9
+const INNER = 1.68 // the lane next to the road
+const SPACING = [0.528, 0.75] // how far the second lane is from the first: least (little room) and most (lots of room)
+export const LANES = [INNER, INNER + SPACING[0]]
 
 export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0,
@@ -28,7 +36,7 @@ const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in
 
 // the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
 export function makeTraffic() {
-  return { sig: { axis: 'x', mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false } }
+  return { sig: { axis: 'x', mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [] }
 }
 
 // ---------- shared by cars and people ----------
@@ -100,14 +108,22 @@ function updatePass(m, movers, cfg, canStart) {
   if (plan && canStart(plan)) { m.passing = plan.lead; m.goal = m.alt }
 }
 
-// move sideways towards the lane i want, unless somebody is right there
+// move sideways towards the lane i want. cars wait if somebody is right there. people back off to the lane they
+// came from instead, so they never end up pressed up against somebody (two people turning round at the same time).
 function slide(m, movers, cfg, dt) {
+  const step = cfg.shift * dt
   const want = m.goal - m.lat
-  if (Math.abs(want) < 1e-4) return
-  const next = m.lat + Math.max(-cfg.shift * dt, Math.min(cfg.shift * dt, want))
+  const next = Math.abs(want) < 1e-4 ? m.lat : m.lat + Math.max(-step, Math.min(step, want))
   for (const o of movers) {
-    if (o === m || !o.active || o.road !== m.road) continue
-    if (Math.abs(o.t - m.t) < m.hl + o.hl + 0.1 && Math.abs(o.lat - next) < m.hw + o.hw + cfg.side) return
+    if (o === m || !o.active || o.road !== m.road || Math.abs(o.t - m.t) >= m.hl + o.hl + (cfg.squeeze ? 0.5 : 0.1)) continue // somebody beside me, or about to be
+    if (cfg.squeeze) {
+      const d = m.lat - o.lat
+      if (Math.abs(next - o.lat) < cfg.squeeze && Math.abs(d) > 1e-3) {
+        const lo = Math.min(m.lane, m.alt), hi = Math.max(m.lane, m.alt)
+        m.lat = Math.max(lo, Math.min(hi, m.lat + Math.sign(d) * step))
+        return
+      }
+    } else if (Math.abs(o.lat - next) < m.hw + o.hw + cfg.side) return
   }
   m.lat = next
 }
@@ -220,13 +236,28 @@ export function spawnCar(cars, rng, anywhere = false) {
 
 // ---------- people ----------
 
-const wLane = (side, dir) => side * (dir > 0 ? LANES[0] : LANES[1]) // opposite ways use different lanes
-const wAlt = (side, dir) => side * (dir > 0 ? LANES[1] : LANES[0])
+// where the lot lines are beside this footpath, around position t (distance from the middle of the road)
+function lineAt(w, lots, t) {
+  let edge = LOT_MIDDLE - LOT_HALF * (lots.length ? LOT_SMALL : 1) // no lot right here: as much room as a small lot gives
+  for (const l of lots) {
+    const across = w.axis === 'x' ? l.z : l.x
+    const along = w.axis === 'x' ? l.x : l.z
+    if (Math.sign(across) !== w.side || Math.abs(Math.abs(across) - LOT_MIDDLE) > 0.5) continue // not a lot on my side of this road
+    if (Math.abs(t - along) < LOT_HALF * l.size + 0.2) edge = Math.min(edge, LOT_MIDDLE - LOT_HALF * l.size)
+  }
+  return edge
+}
 
-function setLane(w) {
-  w.lane = wLane(w.side, w.dir)
-  w.alt = wAlt(w.side, w.dir)
-  w.goal = w.lane
+// the two lanes right here: the first next to the road, the second as far out as there is room for (looking a bit
+// ahead, so people move in before a bigger lot starts), and opposite ways use different lanes
+function setLane(w, lots) {
+  const ahead = w.t + w.dir * (w.hl + 0.9)
+  const edge = Math.min(lineAt(w, lots, w.t), lineAt(w, lots, ahead), lineAt(w, lots, w.t - w.dir * (w.hl + 0.3)))
+  const gap = Math.max(SPACING[0], Math.min(SPACING[1], edge - w.hw - 0.01 - INNER))
+  const near = w.side * INNER, far = w.side * (INNER + gap)
+  w.lane = w.dir > 0 ? near : far
+  w.alt = w.dir > 0 ? far : near
+  w.goal = w.passing ? w.alt : w.lane
 }
 
 // n people spread over the four footpaths along the roads
@@ -236,8 +267,8 @@ export function placeWalkers(n, rng) {
     const axis = i % 2 ? 'x' : 'z'
     const side = i % 4 < 2 ? 1 : -1
     const dir = rng() > 0.5 ? 1 : -1
-    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.55 + rng() * 0.5, hl: 0.3, hw: 0.22, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
-    setLane(w)
+    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.55 + rng() * 0.5, hl: 0.3, hw: 0.24, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
+    setLane(w, [])
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
       w.t = (rng() > 0.5 ? 1 : -1) * (4.5 + rng() * 8)
@@ -262,16 +293,17 @@ function plazaLimit(w, sig) {
   return brake(toEdge - 0.15, WALK.brake)
 }
 
-function turnAround(w) {
+function turnAround(w, lots) {
   w.dir = -w.dir
   w.waiting = false
   w.t = Math.max(-WALK.edge, Math.min(WALK.edge, w.t))
   w.passing = null
   w.still = 0
-  setLane(w)
+  setLane(w, lots)
 }
 
 function stepWalker(w, walkers, tr, dt) {
+  setLane(w, tr.lots)
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
   lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig))
@@ -279,7 +311,7 @@ function stepWalker(w, walkers, tr, dt) {
   slide(w, walkers, WALK, dt)
   w.t += w.dir * w.speed * dt
   w.still = w.speed < 0.03 && !w.waiting ? w.still + dt : 0
-  if (Math.abs(w.t) > WALK.edge || w.still > 20) turnAround(w)
+  if (Math.abs(w.t) > WALK.edge || w.still > 20) turnAround(w, tr.lots)
 }
 
 // ---------- one step for everybody ----------
