@@ -26,22 +26,23 @@ export const KINDS = {
 // everything in the state that is not a list of records
 export const SETTING_KEYS = ['entered', 'setupDone', 'stateName', 'season', 'appearance', 'minimal', 'map', 'currency', 'methods']
 
-const settingsOf = (state) => Object.fromEntries(SETTING_KEYS.filter((k) => state[k] !== undefined).map((k) => [k, state[k]]))
-const sameSettings = (a, b) => JSON.stringify(settingsOf(a)) === JSON.stringify(settingsOf(b))
+export const settingsOf = (state) => Object.fromEntries(SETTING_KEYS.filter((k) => state[k] !== undefined).map((k) => [k, state[k]]))
+export const sameSettings = (a, b) => JSON.stringify(settingsOf(a)) === JSON.stringify(settingsOf(b))
 
 // the SQL to write one record (insert, or update when it is already there)
-function upsertSql(spec) {
+export function upsertSql(spec) {
   const cols = [...(spec.ordered ? ['pos'] : []), ...spec.fields.map((f) => f[1])]
   const all = ['id', ...cols, 'updated_at', 'deleted', 'dirty']
   const sets = [...cols, 'updated_at', 'deleted', 'dirty'].map((c) => `${c} = excluded.${c}`).join(', ')
   return `insert into ${spec.table} (${all.join(', ')}) values (${all.map(() => '?').join(', ')}) on conflict (id) do update set ${sets}`
 }
 
-const values = (spec, obj, pos, now) => [
+// the values for upsertSql. `dirty` is 1 for a change made here, 0 for something that came from the server.
+export const values = (spec, obj, pos, now, dirty = 1) => [
   obj.id,
   ...(spec.ordered ? [pos] : []),
   ...spec.fields.map(([key]) => (obj[key] === undefined ? null : obj[key])),
-  now, 0, 1,
+  now, 0, dirty,
 ]
 
 const fromRow = (spec, row) => {
@@ -58,14 +59,17 @@ export async function isEmpty(db) {
   return (await db.all('select 1 from settings limit 1')).length === 0
 }
 
+// one list of records, in the order the app wants them
+export async function loadList(db, spec) {
+  const order = spec.ordered ? 'pos, id' : spec.table === 'expenses' ? 'ts, id' : 'id'
+  const rows = await db.all(`select * from ${spec.table} where deleted = 0 order by ${order}`)
+  return rows.map((r) => fromRow(spec, r))
+}
+
 // rebuild the state from the database. `base` supplies the defaults for anything not stored.
 export async function loadState(db, base) {
   const state = { ...base }
-  for (const spec of Object.values(KINDS)) {
-    const order = spec.ordered ? 'pos, id' : spec.table === 'expenses' ? 'ts, id' : 'id'
-    const rows = await db.all(`select * from ${spec.table} where deleted = 0 order by ${order}`)
-    state[spec.list] = rows.map((r) => fromRow(spec, r))
-  }
+  for (const spec of Object.values(KINDS)) state[spec.list] = await loadList(db, spec)
   const row = (await db.all("select data from settings where id = 'settings' and deleted = 0"))[0]
   if (row) Object.assign(state, JSON.parse(row.data))
   return state

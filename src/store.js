@@ -4,7 +4,8 @@ import { Preferences } from '@capacitor/preferences'
 import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareOf } from './util.js'
 import { openNativeDb } from './db/native.js'
 import { ensureSchema } from './db/schema.js'
-import { loadState, saveDiff, importState, isEmpty, counts, getMeta, setMeta } from './db/repo.js'
+import { loadState, saveDiff, importState, isEmpty, counts, getMeta, setMeta, KINDS as DB_KINDS, settingsOf } from './db/repo.js'
+import { SYNCED_SETTINGS, pick } from './sync/engine.js'
 
 const KEY = 'dollar-q:v1'
 
@@ -158,10 +159,14 @@ let touched = false // did something change before the database was ready?
 let writes = Promise.resolve() // changes are written one after the other, in order
 const BROKEN = KEY + ':db-broken'
 
-const persist = () => {
+// the old kind of saved copy: one piece of text, written on every change
+const mirror = () => {
   const json = JSON.stringify(state)
   try { localStorage.setItem(KEY, json) } catch { /* private mode */ }
   if (NATIVE) Preferences.set({ key: KEY, value: json }).catch(() => {})
+}
+const persist = () => {
+  mirror()
   if (db) { writeToDb(saved, state); saved = state }
 }
 
@@ -227,12 +232,73 @@ export const ready = restored.then(() => startDatabase(openNativeDb))
 export const getDb = () => db
 export const flushDatabase = () => writes // resolves when every change so far is in the database
 
+// ---------- what sync does to the state ----------
+
+// something besides the screens changed the state (sync): tell the screens, and the sync, if it wants to know
+const watchers = new Set()
+export const onStateChange = (fn) => { watchers.add(fn); return () => watchers.delete(fn) }
+
+// put changes received from the cloud into the state on screen. the database already has them. a record the person
+// edited while the sync was running is left alone (the database keeps their newer edit).
+export function applySynced(accepted, base, ordered = {}) {
+  let next = state
+  if (accepted.some((r) => r.kind === 'settings') && JSON.stringify(settingsOf(base)) === JSON.stringify(settingsOf(state))) {
+    const remote = accepted.filter((r) => r.kind === 'settings').at(-1)
+    next = { ...next, ...pick(remote.data || {}, SYNCED_SETTINGS) }
+  }
+  for (const [kind, spec] of Object.entries(DB_KINDS)) {
+    const mine = accepted.filter((r) => r.kind === kind)
+    if (!mine.length) continue
+    if (spec.ordered) {
+      if (ordered[spec.list] && base[spec.list] === state[spec.list]) next = { ...next, [spec.list]: ordered[spec.list] }
+      continue
+    }
+    const wasBase = new Map(base[spec.list].map((o) => [o.id, o]))
+    const nowList = next[spec.list]
+    const nowById = new Map(nowList.map((o) => [o.id, o]))
+    const drop = new Set()
+    const put = new Map()
+    for (const r of mine) {
+      if (nowById.get(r.id) !== wasBase.get(r.id)) continue // changed on this phone meanwhile
+      if (r.deleted) { drop.add(r.id); continue }
+      const obj = { id: r.id }
+      for (const [key] of spec.fields) if (r.data[key] !== undefined && r.data[key] !== null) obj[key] = r.data[key]
+      put.set(r.id, obj)
+    }
+    if (!drop.size && !put.size) continue
+    const list = nowList.filter((o) => !drop.has(o.id)).map((o) => put.get(o.id) || o)
+    for (const [id, obj] of put) if (!nowById.has(id)) list.push(obj)
+    next = { ...next, [spec.list]: list }
+  }
+  if (next === state) return
+  state = next
+  saved = next // the database already has this
+  mirror()
+  emit()
+  watchers.forEach((fn) => fn('sync'))
+}
+
+// "use the cloud data instead": forget what this phone has, ready to be filled from the cloud
+export async function clearForCloud() {
+  await writes
+  if (!db) return
+  await db.tx(async (c) => {
+    for (const t of ['counties', 'accounts', 'fixed_expenses', 'expenses', 'settings']) await c.run(`delete from ${t}`)
+    await c.run("insert into meta (key, value) values ('cursor', '0') on conflict (key) do update set value = '0'")
+  })
+  state = { ...initial(), counties: [], accounts: [], fixed: [], expenses: [] }
+  saved = state
+  mirror()
+  emit()
+}
+
 export const getState = () => state
 export function setState(fn) {
   touched = true
   state = typeof fn === 'function' ? fn(state) : { ...state, ...fn }
   persist()
   emit()
+  watchers.forEach((w) => w('local'))
 }
 export const useStore = () => useSyncExternalStore(subscribe, getState)
 
