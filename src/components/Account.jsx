@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSyncStatus, sync } from '../sync/service.js'
+import { rememberedEmail, rememberEmail } from '../sync/remember.js'
 
 const ago = (ms) => {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
@@ -14,7 +15,8 @@ const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 
 export default function Account() {
   const s = useSyncStatus()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(rememberedEmail)
+  const [remember, setRemember] = useState(true)
   const [code, setCode] = useState('')
   const [askReplace, setAskReplace] = useState(false)
   const [askDelete, setAskDelete] = useState(false)
@@ -31,8 +33,12 @@ export default function Account() {
         <div className="muted" style={{ fontSize: 15 }}>Sign in with your email to sync your expenses and get them back if you lose this phone. It is optional: $? works the same without it.</div>
         <input className="field" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" placeholder="you@example.com"
           value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email address" style={{ userSelect: 'text', WebkitUserSelect: 'text' }} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 16 }}>
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} style={{ width: 22, height: 22, accentColor: 'var(--ink)' }} />
+          Remember my email on this phone
+        </label>
         {error}
-        <button className="btn" style={btn} disabled={s.working || !emailOk(email)} onClick={() => sync().sendCode(email)}>{s.working ? 'Sending…' : 'Send me a code'}</button>
+        <button className="btn" style={btn} disabled={s.working || !emailOk(email)} onClick={() => { rememberEmail(email, remember); sync().sendCode(email) }}>{s.working ? 'Sending…' : 'Send me a code'}</button>
       </div>
     )
   }
