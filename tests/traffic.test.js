@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -49,8 +49,9 @@ function simulate(name, seed, minutes, dt, lotSize) {
     stepTraffic(cars, walkers, tr, dt)
     for (const w of walkers) if (Math.abs(w.lat) - w.hw < 1.43 || Math.abs(w.lat) + w.hw > 2.45) out.offPavement++
     for (const w of walkers) { // the lot line beside this person: the biggest lot they are beside decides
-      const grown = lotSize && lotsOf(lotSize).some((l) => l.size === 1 && Math.sign(w.axis === 'x' ? l.z : l.x) === w.side && Math.abs(w.t - (w.axis === 'x' ? l.x : l.z)) < LOT_HALF + 0.3 && Math.abs(Math.abs(w.axis === 'x' ? l.z : l.x) - 4.9) < 0.5)
-      const edge = grown || !lotSize ? 4.9 - LOT_HALF : 4.9 - LOT_HALF * LOT_SMALL
+      // the lot line beside this person: the biggest lot they are beside decides (no lots at all: as for a fully grown lot)
+      const beside = !lotSize ? [] : lotsOf(lotSize).filter((l) => Math.sign(w.axis === 'x' ? l.z : l.x) === w.side && Math.abs(w.t - (w.axis === 'x' ? l.x : l.z)) < LOT_HALF * l.size + 0.3 && Math.abs(Math.abs(w.axis === 'x' ? l.z : l.x) - 4.9) < 0.5)
+      const edge = !lotSize ? 4.9 - LOT_HALF : 4.9 - LOT_HALF * (beside.length ? Math.max(...beside.map((l) => l.size)) : LOT_SMALL)
       if (Math.abs(w.lat) + w.hw > edge + 0.01) out.outsideLine++
     }
     for (let i = 0; i < walkers.length; i++) { // how far apart (after the first few seconds, when people have settled into their lanes) are two people who are beside each other?
@@ -135,6 +136,61 @@ describe('traffic: room on the footpath follows how big the lots are', () => {
   it('some lots grown, some not: people pull in next to a grown lot and never touch', () => {
     for (const seed of [1, 2, 3, 4]) {
       const r = simulate('city', seed, 6, 1 / 30, (x, z) => (x > 0 && z > 0 ? 1 : LOT_SMALL))
+      expect(r.crashes).toEqual([])
+      expect(r.outsideLine).toBe(0)
+      expect(r.minGap).toBeGreaterThan(0.04)
+    }
+  }, 120000)
+})
+
+describe('traffic: the footpath gets thinner the more is spent', () => {
+  it('a lot grows with its level: small when empty, bigger with spending, never past full size', () => {
+    expect(lotSize(0)).toBeGreaterThan(0.5)
+    expect(lotSize(0)).toBeLessThan(0.6)
+    let last = 0
+    for (let level = 0; level <= 200; level++) {
+      const s = lotSize(level)
+      expect(s).toBeGreaterThanOrEqual(last)
+      expect(s).toBeLessThanOrEqual(1)
+      last = s
+    }
+    expect(lotSize(4)).toBeLessThan(lotSize(15))
+    expect(lotSize(15)).toBeLessThan(lotSize(40))
+    expect(lotSize(40)).toBeGreaterThan(0.99)
+    expect(lotSize(-3)).toBe(lotSize(0))
+  })
+
+  // the room between the two lanes, with every lot at the same size: it shrinks as the lots grow
+  const gapAt = (size) => {
+    const w = placeWalkers(1, () => 0.5)[0]
+    const tr = makeTraffic()
+    tr.lots = lotsOf(() => size)
+    w.t = 4.9
+    stepTraffic([], [w], tr, 1 / 30)
+    return Math.abs(w.alt - w.lane)
+  }
+
+  it('an empty or tiny lot leaves wide lanes, a big one squeezes them to the tightest gap', () => {
+    const gaps = [0.55, 0.7, 0.85, 1].map(gapAt)
+    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThanOrEqual(gaps[i - 1] + 1e-9)
+    expect(gaps[0]).toBeGreaterThan(gaps[3] + 0.3) // you can see the difference
+    expect(gaps[3]).toBeGreaterThanOrEqual(0.52)   // but even the tightest still lets two people pass
+  })
+
+  it('at every size people stay inside the lines and never touch', () => {
+    for (const size of [lotSize(0), lotSize(3), lotSize(8), lotSize(20), 1]) {
+      for (const seed of [1, 2]) {
+        const r = simulate('city', seed, 4, 1 / 30, () => size)
+        expect(r.crashes).toEqual([])
+        expect(r.outsideLine).toBe(0)
+        expect(r.minGap).toBeGreaterThan(0.04)
+      }
+    }
+  }, 180000)
+
+  it('counties of different levels side by side: people move over as the lots change, no touching', () => {
+    for (const seed of [1, 2, 3]) {
+      const r = simulate('city', seed, 5, 1 / 30, (x, z) => lotSize(Math.round(Math.abs(x) + Math.abs(z)) % 30))
       expect(r.crashes).toEqual([])
       expect(r.outsideLine).toBe(0)
       expect(r.minGap).toBeGreaterThan(0.04)

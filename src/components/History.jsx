@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import { countyIcon } from './Editors.jsx'
 import { deleteExpense } from '../store.js'
-import { fmt, ymOf, shiftYm, monthLabel, dayLabel, byAccount } from '../util.js'
+import { fmt, ymOf, shiftYm, monthLabel, dayLabel, byAccount, splitShares } from '../util.js'
 import { setState } from '../store.js'
 import { useLenis } from '../hooks.js'
 import { haptic } from '../haptics.js'
@@ -70,6 +70,14 @@ function SwipeRow({ open, onOpen, onClose, onDelete, onEdit, onTap, children }) 
 }
 
 const METHOD = { bank: 'Bank transfer', debit: 'Debit', credit: 'Credit', cash: 'Cash' }
+
+// the whole math of an uneven split, one line: "You 16 · Person 2 12 · Person 3 22  (32% / 24% / 44%)"
+const splitLine = (e) => {
+  const shares = splitShares(e.total ?? e.amount, e.split)
+  if (!shares) return ''
+  const who = shares.map((v, i) => (i === 0 ? 'You ' : 'Person ' + (i + 1) + ' ') + fmt(v, e.currency)).join(' · ')
+  return who + (e.split.mode === 'percent' ? '  (' + e.split.parts.map((p) => p + '%').join(' / ') + ')' : '')
+}
 
 export default function History({ s, initCounty, onEdit }) {
   const ref = useRef(null)
@@ -164,8 +172,9 @@ export default function History({ s, initCounty, onEdit }) {
                       <span className="ico-circle" style={{ width: 42, height: 42, background: (c?.color || '#888') + '26', color: c?.color || '#888' }}><Icon name={c ? countyIcon(c) : 'tag'} size={20} /></span>
                       <div className="sp" style={{ minWidth: 0 }}>
                         <div className="t">{c?.name || 'Removed county'}{e.fixedId ? ' · auto' : ''}</div>
-                        <div className="s">{[e.note, METHOD[e.methodType] + (e.methodName ? ' · ' + e.methodName : ''), e.people > 1 ? 'Total ' + fmt(e.total ?? e.amount, e.currency) + ' · ' + e.people + ' people' : ''].filter(Boolean).join(' · ')}</div>
+                        <div className="s">{[e.note, METHOD[e.methodType] + (e.methodName ? ' · ' + e.methodName : ''), e.people > 1 ? 'Total ' + fmt(e.total ?? e.amount, e.currency) + ' · ' + e.people + ' people' + (e.split ? ' · custom split' : '') : ''].filter(Boolean).join(' · ')}</div>
                         {detailId === e.id && <div className="s" style={{ marginTop: 6 }}>{new Date(e.ts).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}{e.people > 1 ? ` · your share ${fmt(e.amount, e.currency)} of ${fmt(e.total ?? e.amount, e.currency)}` : ''}</div>}
+                        {detailId === e.id && e.split && <div className="s" style={{ marginTop: 4 }}>{splitLine(e)}</div>}
                       </div>
                       <b>{fmt(e.amount, e.currency)}</b>
                     </div>

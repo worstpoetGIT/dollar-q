@@ -19,7 +19,8 @@ export const KINDS = {
   expense: {
     table: 'expenses', list: 'expenses', ordered: false,
     fields: [['countyId', 'county_id'], ['accountId', 'account_id'], ['amount', 'amount'], ['total', 'total'], ['people', 'people'],
-      ['currency', 'currency'], ['methodType', 'method_type'], ['methodName', 'method_name'], ['note', 'note'], ['ts', 'ts'], ['fixedId', 'fixed_id']],
+      ['currency', 'currency'], ['methodType', 'method_type'], ['methodName', 'method_name'], ['note', 'note'], ['ts', 'ts'], ['fixedId', 'fixed_id'],
+      ['split', 'split', 'json']], // the third word marks a column that holds an object as text
   },
 }
 
@@ -41,13 +42,13 @@ export function upsertSql(spec) {
 export const values = (spec, obj, pos, now, dirty = 1) => [
   obj.id,
   ...(spec.ordered ? [pos] : []),
-  ...spec.fields.map(([key]) => (obj[key] === undefined ? null : obj[key])),
+  ...spec.fields.map(([key, , json]) => (obj[key] === undefined || obj[key] === null ? null : json ? JSON.stringify(obj[key]) : obj[key])),
   now, 0, dirty,
 ]
 
 const fromRow = (spec, row) => {
   const obj = { id: row.id }
-  for (const [key, col] of spec.fields) if (row[col] !== null) obj[key] = row[col]
+  for (const [key, col, json] of spec.fields) if (row[col] !== null) obj[key] = json ? JSON.parse(row[col]) : row[col]
   return obj
 }
 

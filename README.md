@@ -2,6 +2,8 @@
 
 *(did I spend?)*
 
+[![CI](https://github.com/worstpoetGIT/dollar-q/actions/workflows/ci.yml/badge.svg)](https://github.com/worstpoetGIT/dollar-q/actions/workflows/ci.yml)
+
 <!-- screenshot: hero, the home map with a few buildings grown -->
 
 ### App Idea
@@ -78,6 +80,8 @@ The big **+** in the middle opens a number pad. You pick the county, the account
 
 **Splitting a bill.** If the expense was for 3 people, the app records only my equal share as my expense, the way Splitwise does it, because the other two pay me back. The whole amount is still written on the transaction, so History shows `Total €30 · 3 people` next to my €10. The county and the totals everywhere use my share, so they match what I actually spent.
 
+**Splitting unevenly.** When the expense is for more than one person, an **Equally?** button appears. It opens two ways to split: **percentages** or **exact amounts**, both typed into boxes, with you as person 1. A bill of €50 between 3 people can be €16, €12 and €22. The split only saves when the whole bill is settled, to the cent, and only your part counts in your totals. History shows the whole math, for example `You €16 · Person 2 €12 · Person 3 €22`.
+
 <p align="center"><img src="docs/screenshots/add-expense.jpg" alt="Adding an expense with the number pad" width="320"></p>
 
 ### Analytics Page
@@ -107,7 +111,7 @@ All the expenditures from the current month and previous months are in the Histo
 - No budgets and no monthly goal.
 - No income. This only tracks what you spend.
 - No settings button, no streaks, no mini analytics.
-- No account, no login and no cloud. Nothing leaves your phone.
+- No account you have to make. Signing in with your email is optional, and the app works the same without it.
 
 ### Install
 
@@ -127,7 +131,9 @@ The iPhone file is **not signed**, because Apple only lets you run signed apps a
 
 ### Where your data lives
 
-Only on your phone. If you delete the app, the data goes with it, so use **Profile, Data, Export backup** now and then. It makes a `.json` file you can save to Files or AirDrop to yourself, and **Import backup** brings everything back. Importing asks you before it replaces anything and keeps one undo.
+On your phone, in a database. If you delete the app, the data goes with it, so use **Profile, Data, Export backup** now and then. It makes a `.json` file you can save to Files or AirDrop to yourself, and **Import backup** brings everything back. Importing asks you before it replaces anything and keeps one undo.
+
+**Signing in is optional.** If you sign in with your email (you get a 6 digit code, no password), your expenses sync between your phones and you get them back if you lose one. Then a copy of your data is also on my server in Ireland-region Oracle Cloud, in a PostgreSQL database that is backed up every hour, encrypted. Only your own account can read it, and **Profile, Account** can delete the account and the copy for good. The data on your phone stays. If two phones change the same expense, the newest edit wins.
 
 ### Tech Stack
 
@@ -141,11 +147,12 @@ Only on your phone. If you delete the app, the data goes with it, so use **Profi
 | Phone shell | Capacitor 8, for Android and iPhone |
 | Native plugins | Haptics, Preferences, Filesystem, Share, Status Bar |
 | Tests | Vitest |
-| Storage | `localStorage`, mirrored to native storage (Capacitor Preferences) in the installed app |
-| CI | GitHub Actions: an Ubuntu runner (Java 21, Gradle) builds the APK, a macOS runner (`xcodebuild`) builds the IPA |
+| Storage | SQLite on the phone (`@capacitor-community/sqlite`), with the old saved copy kept as a mirror. A browser falls back to `localStorage` |
+| Sign in and sync | Email codes and sync against my own small server: Node 22, Fastify, PostgreSQL, Caddy, on an Oracle Cloud free tier VM. Login emails go through Resend. The token lives in the Keychain or Android Keystore |
+| CI | GitHub Actions. Tests and a web build on every branch and pull request, a dependency audit, CodeQL once a week, and on `main` an Ubuntu runner (Java 21, Gradle) builds the APK and a macOS runner (`xcodebuild`) builds the IPA. All actions are pinned to a commit |
 | Targets | Android 7 and up (minSdk 24, target 36), iOS 15 and up |
 
-The whole app is about 3,500 lines. There is no backend and no network code in the app, it never makes a request. (The Android manifest still lists the internet permission, because Capacitor adds it by default. The app doesn't use it, and I haven't removed it because I can't test the change on an Android device yet.)
+The app works fully offline. The only network code is the optional sign in and sync (`src/sync/`), and it talks to one address, `api.fridayai.win`, which the content security policy allows and nothing else. If you never sign in, the app never makes a request.
 
 ### How it works
 
@@ -183,11 +190,15 @@ src/
   backup.js           export and import
   haptics.js          native and web haptics
   util.js             currencies, formatting, the level function
-  components/         Home, Analytics, History, Profile, AddSheet, Onboarding, Splash...
+  components/         Home, Analytics, History, Profile, AddSheet, SplitPanel, Account, Onboarding, Splash...
+  db/                 the SQLite tables and the code that turns the state into rows and back
+  sync/               sign in, and the sync engine (send changes, fetch changes, newest edit wins)
+  traffic.js          who drives and walks where, and how big a lot is for a county's level
 android/              Capacitor Android project
 ios/                  Capacitor iOS project
 build-ios.sh          unsigned IPA build for a Mac
-.github/workflows/    the CI build
+.github/workflows/    CI (tests, audit), CodeQL, and the app builds
+tools/                signs and publishes a release on my own machine
 docs/screenshots/     the pictures in this README
 ```
 
@@ -199,6 +210,11 @@ docs/screenshots/     the pictures in this README
 - **The split**: my share of a bill, rounding to cents, and that converting twice changes nothing.
 - **Construction levels**: the level never drops as the amount grows, has no ceiling, scales per currency, and every level adds something to the lot.
 - **Add, edit and delete** of an expense, and **reading backup files**, including hostile ones.
+- **The database**: moving the old saved data over (and verifying it), upgrading older database versions, and what happens when a write fails.
+- **Sync**: sending and fetching changes, newest edit wins, deletes, two phones, going offline, and never overwriting what someone is typing.
+- **Uneven splits**: percentages and exact amounts, the cents always adding up to the bill, bad splits being refused, and the phone and the server splitting cents identically.
+- **Footpaths**: lot size by level, the footpath thinning as a county grows, and long simulations checking that nobody touches, stands on a line or leaves the pavement.
+- **Guards**: the page's security policy must allow the server address (and nothing wider), and the version must match in `package.json`, Android and Xcode.
 
 The 3D map, the animations, the haptics and the installs are not covered by tests. I check those in a headless browser and on my own iPhone. The Android APK is built and signed, but I have not run it on an Android device yet, so treat it as untested.
 
@@ -210,6 +226,8 @@ I tried to attack my own app before sharing it, and fixed what I found:
 - A strict content security policy only lets the app run its own code and talk to nothing else.
 - Imported backup files are treated as untrusted, and shown to you before they replace anything.
 - Android's cloud backup is switched off.
+- The server never trusts the phone: it checks every record again and works out each share itself. Login codes are stored hashed and expire after 10 minutes, sessions are opaque tokens whose hash is stored, and there are rate limits on codes and requests.
+- Dependencies are audited on every change, the code is scanned with CodeQL, and the build tools are pinned to exact commits.
 
 If you find something I missed, open an issue.
 
@@ -228,7 +246,7 @@ The Android and iPhone builds run on GitHub Actions (`.github/workflows/build.ym
 - **Android:** `npx cap sync android`, then `./gradlew assembleRelease` inside `android/`. I sign the APK on my own machine with a key that never gets uploaded anywhere. To sign your own build: `zipalign -c 4 app.apk`, then `apksigner sign --ks your.p12 --out DollarQ.apk app.apk`.
 - **iPhone:** `npx cap sync ios`, then `./build-ios.sh` on a Mac with Xcode. It gives you the unsigned `.ipa`.
 
-Releases are put together by hand, with the signed APK and the unsigned IPA attached.
+**How a release goes out.** Pushing a tag like `v0.3.1` builds both files and opens a **draft** release with the unsigned APK and IPA. The tests also check that the tag matches the version in `package.json`, the Android settings and the Xcode project. Then I run `tools/sign-and-release.sh v0.3.1` on my own machine. It signs the APK with my key, checks the certificate is the same as every earlier release (phones refuse an update otherwise), and uploads it. It only goes public when I add `--publish`. The signing key never leaves my machine and is not a GitHub secret.
 
 ### Contributors
 

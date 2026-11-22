@@ -76,5 +76,33 @@ export function levelFor(amount, code) {
 // my share of a bill split between n people
 export const shareOf = (total, people) => Math.max(0.01, Math.round((total / Math.max(1, Math.round(people) || 1)) * 100) / 100)
 
+// an uneven split of one bill between friends. split = { mode, parts }, parts[0] is me.
+// mode 'percent': the parts are percentages and must add up to 100.  mode 'amount': the parts are money and must add up to the total.
+// gives back everyone's share in order (the shares always add up to the total to the cent), or null when the split does not work.
+export function splitShares(total, split) {
+  if (!split || (split.mode !== 'percent' && split.mode !== 'amount') || !Array.isArray(split.parts)) return null
+  const parts = split.parts
+  if (parts.length < 2 || parts.length > 20) return null
+  const whole = Math.round(total * 100)
+  const c = parts.map((p) => (typeof p === 'number' && Number.isFinite(p) ? Math.round(p * 100) : 0))
+  if (!(whole >= 1) || c.some((x) => x < 1)) return null
+  const sum = c.reduce((a, b) => a + b, 0)
+  if (split.mode === 'amount') return sum === whole ? c.map((x) => x / 100) : null
+  if (sum !== 10000) return null
+  // percentages: cut the bill in cents, then hand the leftover cents to the biggest remainders (earlier person first on a tie)
+  const top = c.map((p) => whole * p)
+  const cents = top.map((t) => Math.floor(t / 10000))
+  const order = top.map((t, i) => [t % 10000, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
+  let left = whole - cents.reduce((a, b) => a + b, 0)
+  for (let k = 0; left > 0; k++, left--) cents[order[k][1]]++
+  return cents.some((x) => x < 1) ? null : cents.map((x) => x / 100)
+}
+
+// my share of a bill: from the uneven split when there is one, otherwise an equal share
+export const shareFor = (total, people, split) => {
+  const s = splitShares(total, split)
+  return s ? s[0] : shareOf(total, people)
+}
+
 // history shows one account at a time so currencies never mix
 export const byAccount = (expenses, accountId) => expenses.filter((e) => e.accountId === accountId)
