@@ -54,7 +54,7 @@ jobs:
           mkdir out
           cp android/app/build/outputs/apk/release/*.apk out/DollarQ-unsigned.apk
           ls -la out
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DollarQ-apk
           path: out/DollarQ-unsigned.apk
@@ -82,7 +82,7 @@ jobs:
         run: tail -80 build-log.txt || true
       - name: Collect the IPA
         run: mkdir out && cp DollarQ-unsigned.ipa out/DollarQ-unsigned.ipa
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DollarQ-ipa
           path: out/DollarQ-unsigned.ipa
