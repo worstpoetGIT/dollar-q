@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL } from './traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -935,7 +935,7 @@ export class CityScene {
     if (!animate) { lot.size = stageSize(lot); this.sizeLot(lot) }
   }
 
-  // a lot's outline, pad and everything on it get a bit smaller in the first stage, which leaves the footpath beside it roomier
+  // a lot's outline, pad and everything on it are smaller while the county has little spending, which leaves the footpath beside it roomier
   sizeLot(lot) {
     const s = lot.size
     lot.border.scale.set(s, 1, s)
@@ -1218,9 +1218,8 @@ export class CityScene {
 }
 
 const DIM = new THREE.Color(0x9a9a98)
-// first stage of a lot: up to one building with its fence and extras (level 4). the second stage starts when a second building appears (level 5).
-const SECOND_STAGE = 5
-const stageSize = (lot) => (lot.built && lot.built.L >= SECOND_STAGE ? 1 : LOT_SMALL)
+// the size of a lot follows its level: small while there is little spending, bigger (and the footpath thinner) the more is spent
+const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 
 // traffic light colours: red, yellow, green, lit and switched off
 const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]

@@ -20,10 +20,14 @@ const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0, squeeze: 0.52
 // 2.45 from the middle of the road (the lot is 4.9 across and its middle is 4.9 out) when a lot is fully grown, and
 // further out while it is small, so a small lot leaves more room. people keep to two lanes and never stand on a line.
 export const LOT_HALF = 2.45
-export const LOT_SMALL = 0.85 // how big a lot is while it is still in its first stage (1 is fully grown)
+export const LOT_SMALL = 0.85 // a lot size to assume when there is no lot to look at (1 is fully grown)
+
+// how big a lot is for a county of this level. an empty lot is small, it grows quickly with the first expenses and then
+// slower, and gets close to 1 only for a county with a lot of spending. so the more spent, the thinner the footpath beside it.
+export const lotSize = (level) => Math.min(1, 0.55 + 0.45 * (1 - Math.exp(-Math.max(0, level) / 10)))
 const LOT_MIDDLE = 4.9
 const INNER = 1.68 // the lane next to the road
-const SPACING = [0.528, 0.75] // how far the second lane is from the first: least (little room) and most (lots of room)
+const SPACING = [0.528, 1.1] // how far the second lane is from the first: least (a big lot squeezes the footpath) and most (an empty or tiny lot leaves lots of room)
 export const LANES = [INNER, INNER + SPACING[0]]
 
 export const newCar = (hl, hw) => ({
