@@ -3,6 +3,8 @@ import Icon from './Icon.jsx'
 import { CountiesEditor, MethodsEditor, AccountsEditor, FixedEditor } from './Editors.jsx'
 import { setState, resetAll, undoImport, hasUndo } from '../store.js'
 import { exportBackup, readBackup, applyBackup, lastBackup } from '../backup.js'
+import Account from './Account.jsx'
+import { useSyncStatus } from '../sync/service.js'
 import { useLenis } from '../hooks.js'
 
 function Sub({ title, onBack, children }) {
@@ -28,6 +30,7 @@ export default function Profile({ s, sub, setSub }) {
   const [undo, setUndo] = useState(hasUndo())
   const [last, setLast] = useState(lastBackup())
   const pick = useRef(null)
+  const signedIn = useSyncStatus().phase === 'idle'
   const doExport = async () => {
     try { await exportBackup(); setLast(lastBackup()); setMsg({ ok: true, text: 'Backup file created.' }) }
     catch (e) { if (!/cancel/i.test(String(e && e.message))) setMsg({ ok: false, text: 'Could not create the backup.' }) }
@@ -73,6 +76,9 @@ export default function Profile({ s, sub, setSub }) {
           </button>
         ))}
 
+        <div className="label" style={{ marginTop: 26 }}>Account</div>
+        <Account />
+
         <div className="label" style={{ marginTop: 26 }}>Display</div>
         <div className="card">
           <button className="row" style={{ width: '100%', textAlign: 'left' }} role="switch" aria-checked={!!s.minimal} onClick={() => setState((st) => ({ ...st, minimal: !st.minimal }))}>
@@ -86,7 +92,9 @@ export default function Profile({ s, sub, setSub }) {
 
         <div className="label" style={{ marginTop: 26 }}>Data</div>
         <div className="card" style={{ display: 'grid', gap: 8 }}>
-          <div className="muted" style={{ fontSize: 15 }}>Everything is stored on this iPhone only. Save a backup file so a deleted or expired app can't take your expenses with it.</div>
+          <div className="muted" style={{ fontSize: 15 }}>{signedIn
+            ? 'Your data is stored on this phone and in your account. A backup file is still a good idea.'
+            : "Everything is stored on this phone only. Save a backup file so a deleted or expired app can't take your expenses with it."}</div>
           <div className="muted" style={{ fontSize: 15 }}>{last ? 'Last backup: ' + new Date(last).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' }) : s.expenses.length ? 'You have not made a backup yet.' : 'No backup yet.'}</div>
           <div className="row">
             <button className="btn ghost" style={{ height: 46, fontSize: 18 }} onClick={doExport}>Export backup</button>
@@ -96,7 +104,7 @@ export default function Profile({ s, sub, setSub }) {
           {msg && <div style={{ fontSize: 15, color: msg.ok ? 'var(--green-ink)' : 'var(--red)' }}>{msg.text}</div>}
           {pending && (
             <div className="card" style={{ display: 'grid', gap: 8, padding: 14, boxShadow: 'none' }}>
-              <div style={{ fontWeight: 700 }}>Replace everything on this iPhone?</div>
+              <div style={{ fontWeight: 700 }}>Replace everything on this phone?</div>
               <div className="muted" style={{ fontSize: 15 }}>{pending.name || 'This backup'}: {pending.expenses} expense{pending.expenses === 1 ? '' : 's'}, {pending.counties} counties{pending.exportedAt ? ', saved ' + new Date(pending.exportedAt).toLocaleDateString('en', { dateStyle: 'medium' }) : ''}. Your current data will be replaced.</div>
               <div className="row">
                 <button className="btn ghost" style={{ height: 46, fontSize: 18 }} onClick={() => setPending(null)}>Cancel</button>

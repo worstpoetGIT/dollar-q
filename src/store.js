@@ -2,6 +2,10 @@ import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareOf } from './util.js'
+import { openNativeDb } from './db/native.js'
+import { ensureSchema } from './db/schema.js'
+import { loadState, saveDiff, importState, isEmpty, counts, getMeta, setMeta, KINDS as DB_KINDS, settingsOf } from './db/repo.js'
+import { SYNCED_SETTINGS, pick } from './sync/engine.js'
 
 const KEY = 'dollar-q:v1'
 
@@ -147,33 +151,160 @@ const subscribe = (l) => { listeners.add(l); return () => listeners.delete(l) }
 const emit = () => listeners.forEach((l) => l())
 // in the phone app everything is also saved to native storage, iOS can wipe web storage
 const NATIVE = Capacitor.isNativePlatform()
-const persist = () => {
+
+// the phone's database (see further down). declared early because saving a change needs to know about it.
+let db = null // set once the database is open and in step with `state`
+let saved = state // the state the database holds right now, to work out what changed
+let touched = false // did something change before the database was ready?
+let writes = Promise.resolve() // changes are written one after the other, in order
+const BROKEN = KEY + ':db-broken'
+
+// the old kind of saved copy: one piece of text, written on every change
+const mirror = () => {
   const json = JSON.stringify(state)
   try { localStorage.setItem(KEY, json) } catch { /* private mode */ }
   if (NATIVE) Preferences.set({ key: KEY, value: json }).catch(() => {})
 }
+const persist = () => {
+  mirror()
+  if (db) { writeToDb(saved, state); saved = state }
+}
 
 if (migratedAtLoad && state.entered) persist() // write the converted expenses straight back
 
-if (NATIVE) {
-  // web storage cleared? take the native copy
-  Preferences.get({ key: KEY }).then(({ value }) => {
-    if (!value) { if (state.entered) persist(); return }
-    const saved = sanitize(JSON.parse(value))
-    if (saved.entered && (!state.entered || saved.expenses.length > state.expenses.length)) { state = saved; persist(); emit() }
-  }).catch(() => {})
+// web storage cleared? take the native copy
+const restored = !NATIVE ? Promise.resolve() : Preferences.get({ key: KEY }).then(({ value }) => {
+  if (!value) { if (state.entered) persist(); return }
+  const copy = sanitize(JSON.parse(value))
+  if (copy.entered && (!state.entered || copy.expenses.length > state.expenses.length)) { state = copy; persist(); emit() }
+}).catch(() => {})
+
+// ---------- the phone's database ----------
+// the database is the main copy of the data. the old saved copy above is still written on every change (a mirror),
+// so going back to an older version of the app never loses anything.
+
+function writeToDb(before, next) {
+  writes = writes.then(() => saveDiff(db, before, next)).catch((err) => {
+    // never lose data over this: the mirror above has everything, and next start rebuilds the database from it
+    console.error('database write failed, it will be rebuilt from the saved copy on the next start', err)
+    try { localStorage.setItem(BROKEN, '1') } catch { /* ignore */ }
+    db = null
+  })
+}
+
+export async function startDatabase(open) {
+  if (db) return
+  try {
+    const d = await open()
+    if (!d) return // not a phone: no database, the app works as before
+    await ensureSchema(d)
+    let broken = false
+    try { broken = !!localStorage.getItem(BROKEN) } catch { /* ignore */ }
+
+    if (!(await getMeta(d, 'legacy_imported')) || broken || (await isEmpty(d))) {
+      // first start with a database (or a rebuild): move the saved data in, then check nothing went missing
+      const mine = state
+      await d.tx(async (c) => {
+        for (const t of ['counties', 'accounts', 'fixed_expenses', 'expenses', 'settings']) await c.run(`delete from ${t}`)
+      })
+      await importState(d, mine)
+      const n = await counts(d)
+      if (n.expenses !== mine.expenses.length || n.counties !== mine.counties.length || n.accounts !== mine.accounts.length || n.fixed !== mine.fixed.length) {
+        throw new Error('the copy in the database does not match the saved data')
+      }
+      await setMeta(d, 'legacy_imported', new Date().toISOString())
+      try { localStorage.removeItem(BROKEN) } catch { /* ignore */ }
+      saved = mine
+    } else {
+      const fromDb = await loadState(d, initial())
+      if (touched) { await saveDiff(d, fromDb, state); saved = state } // the user changed something while it was starting
+      else { state = fromDb; saved = fromDb; emit() }
+    }
+    db = d
+    if (state !== saved) { writeToDb(saved, state); saved = state } // anything changed while we were busy
+  } catch (err) {
+    console.error('could not start the database, the app keeps using its saved copy', err)
+  }
+}
+
+// resolves when the database is open (or we know there is none). things that write, like the monthly subscriptions, wait for it.
+export const ready = restored.then(() => startDatabase(openNativeDb))
+export const getDb = () => db
+export const flushDatabase = () => writes // resolves when every change so far is in the database
+
+// ---------- what sync does to the state ----------
+
+// something besides the screens changed the state (sync): tell the screens, and the sync, if it wants to know
+const watchers = new Set()
+export const onStateChange = (fn) => { watchers.add(fn); return () => watchers.delete(fn) }
+
+// put changes received from the cloud into the state on screen. the database already has them. a record the person
+// edited while the sync was running is left alone (the database keeps their newer edit).
+export function applySynced(accepted, base, ordered = {}) {
+  let next = state
+  if (accepted.some((r) => r.kind === 'settings') && JSON.stringify(settingsOf(base)) === JSON.stringify(settingsOf(state))) {
+    const remote = accepted.filter((r) => r.kind === 'settings').at(-1)
+    next = { ...next, ...pick(remote.data || {}, SYNCED_SETTINGS) }
+  }
+  for (const [kind, spec] of Object.entries(DB_KINDS)) {
+    const mine = accepted.filter((r) => r.kind === kind)
+    if (!mine.length) continue
+    if (spec.ordered) {
+      if (ordered[spec.list] && base[spec.list] === state[spec.list]) next = { ...next, [spec.list]: ordered[spec.list] }
+      continue
+    }
+    const wasBase = new Map(base[spec.list].map((o) => [o.id, o]))
+    const nowList = next[spec.list]
+    const nowById = new Map(nowList.map((o) => [o.id, o]))
+    const drop = new Set()
+    const put = new Map()
+    for (const r of mine) {
+      if (nowById.get(r.id) !== wasBase.get(r.id)) continue // changed on this phone meanwhile
+      if (r.deleted) { drop.add(r.id); continue }
+      const obj = { id: r.id }
+      for (const [key] of spec.fields) if (r.data[key] !== undefined && r.data[key] !== null) obj[key] = r.data[key]
+      put.set(r.id, obj)
+    }
+    if (!drop.size && !put.size) continue
+    const list = nowList.filter((o) => !drop.has(o.id)).map((o) => put.get(o.id) || o)
+    for (const [id, obj] of put) if (!nowById.has(id)) list.push(obj)
+    next = { ...next, [spec.list]: list }
+  }
+  if (next === state) return
+  state = next
+  saved = next // the database already has this
+  mirror()
+  emit()
+  watchers.forEach((fn) => fn('sync'))
+}
+
+// "use the cloud data instead": forget what this phone has, ready to be filled from the cloud
+export async function clearForCloud() {
+  await writes
+  if (!db) return
+  await db.tx(async (c) => {
+    for (const t of ['counties', 'accounts', 'fixed_expenses', 'expenses', 'settings']) await c.run(`delete from ${t}`)
+    await c.run("insert into meta (key, value) values ('cursor', '0') on conflict (key) do update set value = '0'")
+  })
+  state = { ...initial(), counties: [], accounts: [], fixed: [], expenses: [] }
+  saved = state
+  mirror()
+  emit()
 }
 
 export const getState = () => state
 export function setState(fn) {
+  touched = true
   state = typeof fn === 'function' ? fn(state) : { ...state, ...fn }
   persist()
   emit()
+  watchers.forEach((w) => w('local'))
 }
 export const useStore = () => useSyncExternalStore(subscribe, getState)
 
 // import replaces everything, the old data is kept once for undo
 export function replaceState(next) {
+  touched = true
   try { localStorage.setItem(KEY + ':before-import', JSON.stringify(state)) } catch { /* ignore */ }
   state = sanitize(next)
   persist()
@@ -183,6 +314,7 @@ export function undoImport() {
   try {
     const prev = JSON.parse(localStorage.getItem(KEY + ':before-import'))
     if (!prev) return false
+    touched = true
     state = sanitize(prev)
     persist()
     emit()
@@ -241,7 +373,8 @@ export function runFixed() {
       if (!d) return f
       const acc = s.accounts.find((a) => a.id === f.accountId) || s.accounts[0]
       exps.push({
-        id: uid(), countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
+        id: 'fx-' + f.id + '-' + ym, // the same on every phone, so two phones posting the same month do not make two expenses
+        countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
         methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
         note: f.name, ts: new Date(now.getFullYear(), now.getMonth(), d.day, 9).getTime(), fixedId: f.id,
       })

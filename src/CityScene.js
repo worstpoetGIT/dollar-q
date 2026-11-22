@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic } from './traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -239,7 +239,7 @@ function makePerson(rng) {
     bx(leg, 0.13, 0.05, 0.2, 0x2b2b2b, 0, -0.44, 0.03)
     g.add(leg); legs.push(leg)
     const arm = new THREE.Group()
-    arm.position.set(sx * 0.2, 0.82, 0)
+    arm.position.set(sx * 0.18, 0.82, 0)
     sleeves.push(bx(arm, 0.1, 0.26, 0.11, 0xff6b6b, 0, -0.26, 0))
     hands.push(bx(arm, 0.09, 0.1, 0.1, skin, 0, -0.36, 0))
     g.add(arm); arms.push(arm)
@@ -494,11 +494,13 @@ export class CityScene {
         pick.userData.lot = i
         this.pickGroup.add(pick)
         this.lots.push({
-          i, pos, holder, border, pad, pick, county: null, built: null, top: 1.5, pop: 1, target: 0, stepAt: 0, stepEvery: 0.5, crane: null, parts: {}, anims: [], dim: 0, dimTarget: 0, mats: [], bush: null,
+          i, pos, holder, border, pad, pick, size: LOT_SMALL, county: null, built: null, top: 1.5, pop: 1, target: 0, stepAt: 0, stepEvery: 0.5, crane: null, parts: {}, anims: [], dim: 0, dimTarget: 0, mats: [], bush: null,
         })
         i++
       }
     }
+    this.traffic.lots = this.lots.map((l) => ({ x: l.pos.x, z: l.pos.z, size: l.size })) // the footpaths need to know how big each lot is
+    this.lots.forEach((l) => this.sizeLot(l))
   }
 
   court(x, z, color) {
@@ -847,7 +849,7 @@ export class CityScene {
     bx(arm, 0.3, 0.2, 0.3, 0xf4b400, 2.3, -1.3, 0)
     g.add(arm)
     g.userData = { arm, pole, h: Math.max(3.2, lot.top + 2.2), grow: 0, leaving: false }
-    g.position.set(lot.pos.x + 1.95, 0.2, lot.pos.z - 1.95)
+    g.position.set(lot.pos.x + 1.95 * lot.size, 0.2, lot.pos.z - 1.95 * lot.size)
     g.scale.setScalar(0.001)
     this.world.add(g)
     lot.crane = g
@@ -930,6 +932,16 @@ export class CityScene {
     lot.top = Math.max(1, ...Object.values(parts).map((p) => p.h))
     lot.built = { key: c ? c.style + '|' + c.color + '|' + L : 'none', look: c ? c.style + '|' + c.color : 'none', L }
     if (lot.dim < 0) lot.dim = 0
+    if (!animate) { lot.size = stageSize(lot); this.sizeLot(lot) }
+  }
+
+  // a lot's outline, pad and everything on it get a bit smaller in the first stage, which leaves the footpath beside it roomier
+  sizeLot(lot) {
+    const s = lot.size
+    lot.border.scale.set(s, 1, s)
+    lot.pad.scale.set(s, 1, s)
+    lot.holder.scale.setScalar(s)
+    if (lot.crane) lot.crane.position.set(lot.pos.x + 1.95 * s, 0.2, lot.pos.z - 1.95 * s)
   }
 
   setFilter(group, centroid = true) {
@@ -1089,6 +1101,12 @@ export class CityScene {
     if (this.scene.fog) { this.scene.fog.near = camDist - 14; this.scene.fog.far = camDist + 70 }
     for (const lot of this.lots) {
       // one step at a time until it reaches the target level
+      const want = stageSize(lot)
+      if (Math.abs(lot.size - want) > 0.001) { // grows or shrinks smoothly, about a second
+        lot.size += (want - lot.size) * Math.min(1, dt * 2.5)
+        this.sizeLot(lot)
+      }
+      this.traffic.lots[lot.i].size = lot.size
       if (lot.county && lot.built && lot.target > lot.built.L) {
         const now = performance.now()
         if (now >= lot.stepAt) {
@@ -1200,6 +1218,10 @@ export class CityScene {
 }
 
 const DIM = new THREE.Color(0x9a9a98)
+// first stage of a lot: up to one building with its fence and extras (level 4). the second stage starts when a second building appears (level 5).
+const SECOND_STAGE = 5
+const stageSize = (lot) => (lot.built && lot.built.L >= SECOND_STAGE ? 1 : LOT_SMALL)
+
 // traffic light colours: red, yellow, green, lit and switched off
 const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]
 const OFF = [0x3a0d0d, 0x3a2e00, 0x0d3a1a]

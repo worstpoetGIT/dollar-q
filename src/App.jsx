@@ -8,7 +8,10 @@ import History from './components/History.jsx'
 import Profile from './components/Profile.jsx'
 import AddSheet from './components/AddSheet.jsx'
 import { NameStep, Wizard } from './components/Onboarding.jsx'
-import { useStore, setState, runFixed } from './store.js'
+import SignIn from './components/SignIn.jsx'
+import * as store from './store.js'
+import { useStore, setState, runFixed, ready } from './store.js'
+import { startSync, useSyncStatus } from './sync/service.js'
 import { fmt } from './util.js'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar } from '@capacitor/status-bar'
@@ -24,6 +27,11 @@ export default function App() {
   const [saved, setSaved] = useState(null)
   const [toast, setToast] = useState(null)
   const [histCounty, setHistCounty] = useState(null)
+  // ask for the email first, once. "Not now" is remembered. (nothing to ask on a device without the database)
+  const syncState = useSyncStatus()
+  const [skippedSignIn, setSkippedSignIn] = useState(() => { try { return localStorage.getItem('dollar-q:signin-skipped') === '1' } catch { return false } })
+  const skipSignIn = () => { try { localStorage.setItem('dollar-q:signin-skipped', '1') } catch { /* ignore */ } setSkippedSignIn(true) }
+  const askEmail = !splash && !skippedSignIn && ['signedOut', 'codeSent', 'choosing'].includes(syncState.phase)
 
   useEffect(() => {
     const el = document.documentElement
@@ -46,7 +54,13 @@ export default function App() {
   }, [s.minimal])
 
   useEffect(() => {
-    runFixed()
+    // open the database, then sync (but never wait long for the network), and only then add this month's subscriptions,
+    // so a subscription another phone already added is not added again
+    ready
+      .then(() => startSync(store))
+      .then((svc) => svc.getStatus().phase === 'idle' ? Promise.race([svc.syncNow(), new Promise((r) => setTimeout(r, 8000))]) : null)
+      .catch(() => {})
+      .then(runFixed)
     const h = () => document.visibilityState === 'visible' && runFixed()
     document.addEventListener('visibilitychange', h)
     return () => document.removeEventListener('visibilitychange', h)
@@ -67,7 +81,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {!s.entered && !splash && <NameStep onDone={() => setTab('home')} />}
+      {!s.entered && !splash && !askEmail && <NameStep onDone={() => setTab('home')} />}
       {s.entered && (
         <>
           <Home s={s} active={tab === 'home'} saved={saved}
@@ -89,7 +103,7 @@ export default function App() {
           </nav>
 
           {adding && <AddSheet key={adding.edit ? adding.edit.id : 'new'} s={s} countyId={adding.countyId} edit={adding.edit} onClose={() => setAdding(null)} onSaved={onSaved} />}
-          {!s.setupDone && !splash && <Wizard s={s} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
+          {!s.setupDone && !splash && !askEmail && <Wizard s={s} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
         </>
       )}
       {toast && (
@@ -98,6 +112,7 @@ export default function App() {
           <div><div style={{ fontSize: 14.4, opacity: 0.7 }}>{toast.sub}</div><b>{toast.text}</b></div>
         </div>
       )}
+      {askEmail && <SignIn onSkip={skipSignIn} />}
       {splash && <Splash onDone={() => setSplash(false)} />}
     </div>
   )
