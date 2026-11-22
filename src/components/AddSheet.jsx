@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import Icon from './Icon.jsx'
 import { addExpense, updateExpense } from '../store.js'
-import { symbolOf, fmtNum, shareOf } from '../util.js'
+import { symbolOf, fmtNum, shareFor } from '../util.js'
 import { countyIcon } from './Editors.jsx'
+import SplitPanel from './SplitPanel.jsx'
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '<']
 
@@ -22,11 +23,15 @@ export default function AddSheet({ s, countyId, edit, onClose, onSaved }) {
   const [mk, setMk] = useState(() => (edit && methods.find((x) => x.type === edit.methodType && x.name === (edit.methodName || '')))?.k || methods[0]?.k || '')
   const [raw, setRaw] = useState(edit ? String(edit.total ?? edit.amount) : '')
   const [people, setPeople] = useState(edit ? edit.people : 1)
+  // an uneven split (who pays what share) or null for equal. changing the amount or the head count cancels it.
+  const [split, setSplit] = useState(edit && edit.split ? edit.split : null)
+  const [splitOpen, setSplitOpen] = useState(false)
   const [note, setNote] = useState(edit ? edit.note || '' : '')
   const [date, setDate] = useState(() => (edit ? dayOf(edit.ts) : dayOf(Date.now())))
 
   const acc = s.accounts.find((a) => a.id === accId) || s.accounts[0]
   const press = (k) => {
+    setSplit(null)
     if (k === '<') return setRaw((r) => r.slice(0, -1))
     if (k === '.') return setRaw((r) => (r.includes('.') ? r : (r || '0') + '.'))
     setRaw((r) => {
@@ -46,9 +51,14 @@ export default function AddSheet({ s, countyId, edit, onClose, onSaved }) {
     const d = new Date(date + 'T12:00:00')
     const clock = edit && dayOf(edit.ts) === date ? new Date(edit.ts) : new Date()
     d.setHours(clock.getHours(), clock.getMinutes(), 0, 0)
-    const input = { countyId: cid, amount, accountId: acc.id, methodType: m?.type || 'cash', methodName: m?.name || '', people, note: note.trim(), ts: d.getTime() }
+    const input = { countyId: cid, amount, accountId: acc.id, methodType: m?.type || 'cash', methodName: m?.name || '', people, split: people > 1 ? split : null, note: note.trim(), ts: d.getTime() }
     const e = edit ? updateExpense(edit.id, input) : addExpense(input)
     if (e) onSaved(e, !!edit)
+  }
+
+  if (splitOpen) {
+    return <SplitPanel total={amount} currency={acc.currency} people={people} initial={split}
+      onUse={(sp) => { setSplit(sp); setSplitOpen(false) }} onEqual={() => { setSplit(null); setSplitOpen(false) }} onBack={() => setSplitOpen(false)} />
   }
 
   return (
@@ -85,13 +95,14 @@ export default function AddSheet({ s, countyId, edit, onClose, onSaved }) {
 
         <div className="row" style={{ justifyContent: 'center', marginTop: 10, gap: 14 }}>
           <div className="stepper">
-            <button onClick={() => setPeople((p) => Math.max(1, p - 1))}>−</button>
+            <button onClick={() => { setSplit(null); setPeople((p) => Math.max(1, p - 1)) }}>−</button>
             <span style={{ fontWeight: 700, minWidth: 74, textAlign: 'center', fontSize: 16.8 }}>{people} {people === 1 ? 'person' : 'people'}</span>
-            <button onClick={() => setPeople((p) => Math.min(20, p + 1))}>+</button>
+            <button onClick={() => { setSplit(null); setPeople((p) => Math.min(20, p + 1)) }}>+</button>
           </div>
           <input type="date" className="field" style={{ width: 'auto', padding: '8px 12px', borderRadius: 999, fontSize: 16.8 }} value={date} max={dayOf(Date.now())} onChange={(e) => setDate(e.target.value)} />
         </div>
-        {people > 1 && amount > 0 && <div className="muted" style={{ textAlign: 'center', fontSize: 15.6, marginTop: 8 }}>Your share {symbolOf(acc.currency)}{fmtNum(shareOf(amount, people), acc.currency)} of {symbolOf(acc.currency)}{fmtNum(amount, acc.currency)}</div>}
+        {people > 1 && amount > 0 && <div className="muted" style={{ textAlign: 'center', fontSize: 15.6, marginTop: 8 }}>Your share {symbolOf(acc.currency)}{fmtNum(shareFor(amount, people, split), acc.currency)} of {symbolOf(acc.currency)}{fmtNum(amount, acc.currency)}{split ? ' · custom split' : ''}</div>}
+        {people > 1 && amount > 0 && <div style={{ textAlign: 'center', marginTop: 6 }}><button className="pill" style={{ border: '1px solid var(--line)', padding: '8px 18px' }} onClick={() => setSplitOpen(true)}>{split ? 'Custom split · change' : 'Equally?'}</button></div>}
 
         <input className="field" style={{ marginTop: 10 }} placeholder="Note (optional)" maxLength={80} value={note} onChange={(e) => setNote(e.target.value)} />
 

@@ -15,6 +15,10 @@ export const MIGRATIONS = [
     'create index expenses_dirty_idx on expenses (dirty) where dirty = 1',
     `create table settings (id text primary key, data text not null, ${STANDARD})`,
   ],
+  [
+    // version 2: an uneven split of an expense (who paid what share), stored as text
+    'alter table expenses add column split text',
+  ],
 ]
 
 // bring a database up to the newest version, one step at a time, each in its own transaction

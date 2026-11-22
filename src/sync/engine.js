@@ -16,7 +16,7 @@ function toChange(kind, row) {
   }
   const spec = KINDS[kind]
   const data = {}
-  for (const [key, col] of spec.fields) if (row[col] !== null) data[key] = row[col]
+  for (const [key, col, json] of spec.fields) if (row[col] !== null) data[key] = json ? JSON.parse(row[col]) : row[col]
   if (spec.ordered) data.pos = row.pos
   return { kind, id: row.id, updatedAt: row.updated_at, deleted: !!row.deleted, data }
 }

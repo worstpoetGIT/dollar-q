@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
-import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareOf } from './util.js'
+import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareFor, splitShares } from './util.js'
 import { openNativeDb } from './db/native.js'
 import { ensureSchema } from './db/schema.js'
 import { loadState, saveDiff, importState, isEmpty, counts, getMeta, setMeta, KINDS as DB_KINDS, settingsOf } from './db/repo.js'
@@ -67,6 +67,14 @@ const CODES = CURRENCIES.map((c) => c.code)
 let migrated = false
 export const lastLoadMigrated = () => migrated
 
+// keep an uneven split only when it really works for this total (parts cut to cents, all shares add up)
+const splitOf = (raw, total) => {
+  if (!raw || typeof raw !== 'object') return null
+  const parts = Array.isArray(raw.parts) ? raw.parts.map((p) => (typeof p === 'number' && Number.isFinite(p) ? Math.round(p * 100) / 100 : 0)) : []
+  const split = { mode: raw.mode, parts }
+  return splitShares(total, split) ? split : null
+}
+
 export function sanitize(raw) {
   migrated = false
   const base = initial()
@@ -124,11 +132,13 @@ export function sanitize(raw) {
     if (!id || total === null || ts === null || typeof e.countyId !== 'string') return null
     if (hasTotal === null) migrated = true
     const acc = accById.get(e.accountId) || accounts[0]
-    const people = Math.round(num(e.people, 1, 20, 1))
+    const split = splitOf(e.split, total)
+    const people = split ? split.parts.length : Math.round(num(e.people, 1, 20, 1))
     return {
-      id, countyId: idOf(e.countyId) || 'removed', amount: shareOf(total, people), total, accountId: acc.id, currency: oneOf(e.currency, CODES, acc.currency),
+      id, countyId: idOf(e.countyId) || 'removed', amount: shareFor(total, people, split), total, accountId: acc.id, currency: oneOf(e.currency, CODES, acc.currency),
       methodType: oneOf(e.methodType, TYPES, 'cash'), methodName: str(e.methodName, 22), people,
       note: str(e.note, 80), ts, fixedId: fixedIds.has(e.fixedId) ? e.fixedId : null,
+      ...(split ? { split } : {}),
     }
   }).filter(Boolean)
 
@@ -325,15 +335,18 @@ export const hasUndo = () => { try { return !!localStorage.getItem(KEY + ':befor
 
 export const resetAll = () => setState(initial())
 
-const clean = ({ countyId, amount, accountId, methodType, methodName, people, note, ts }) => {
+const clean = ({ countyId, amount, accountId, methodType, methodName, people, split: rawSplit, note, ts }) => {
   const acc = state.accounts.find((a) => a.id === accountId) || state.accounts[0]
   const total = money(amount)
   if (total === null || !state.counties.some((c) => c.id === countyId)) return null
-  const n = Math.round(num(people, 1, 20, 1))
+  const split = rawSplit ? splitOf(rawSplit, total) : null
+  if (rawSplit && !split) return null // a split that does not add up is never saved
+  const n = split ? split.parts.length : Math.round(num(people, 1, 20, 1))
   return {
-    countyId, amount: shareOf(total, n), total, accountId: acc.id, currency: acc.currency,
+    countyId, amount: shareFor(total, n, split), total, accountId: acc.id, currency: acc.currency,
     methodType: oneOf(methodType, ['bank', 'debit', 'credit', 'cash'], 'cash'), methodName: str(methodName, 22),
     people: n, note: str(note, 80), ts: num(ts, 946684800000, Date.now() + 366 * 864e5, Date.now()),
+    ...(split ? { split } : {}),
   }
 }
 
@@ -351,6 +364,7 @@ export function updateExpense(id, input) {
   const c = old && clean(input)
   if (!c) return null
   const e = { ...old, ...c }
+  if (!c.split) delete e.split // edited back to an equal split
   setState((s) => ({ ...s, expenses: s.expenses.map((x) => (x.id === id ? e : x)) }))
   return e
 }
