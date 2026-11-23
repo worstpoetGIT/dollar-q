@@ -54,7 +54,7 @@ export function NameStep({ initial = '', onBack, onDone }) {
         <h1 className="fade-up">A state<br />with your name.</h1>
         <Billboard name={name.trim()} />
         <p className="muted" style={{ margin: '4px 0 18px', fontSize: 19.2 }}>Just a name so the state knows who it belongs to.</p>
-        <div className="muted" style={{ fontSize: 16.8 }}>Your state's name</div>
+        <div className="muted" style={{ fontSize: 16.8, marginBottom: 12 }}>Your state's name</div>
         <input className="name-input" value={name} placeholder="" maxLength={28} onChange={(e) => setName(e.target.value)} autoFocus={false} />
       </div>
       <div className="foot">
