@@ -10,7 +10,7 @@ export default function SignIn({ onSkip }) {
         <Account />
       </div>
       <div className="foot">
-        <button className="btn ghost" style={{ background: "transparent", color: "var(--ink)" }} onClick={onSkip}>Not now</button>
+        <button className="btn" onClick={onSkip}>Not now</button>
       </div>
     </div>
   )

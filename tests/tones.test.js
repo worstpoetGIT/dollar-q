@@ -21,6 +21,7 @@ const PALETTES = {
   email:    { bg: '#f4721e', btn: '#4d6080', label: '#e9d9ca' }, // orange, blue, cream
   state:    { bg: '#0f3d3a', btn: '#f5dabf', label: '#6c151e' }, // green, cream, bordo
   counties: { bg: '#58b561', btn: '#ffe991', label: '#854606' },
+  payments: { bg: '#f3e8d0', btn: '#5267a5', label: '#f4ead3' }, // cream, blueberry, and a cream a hair lighter than the palette's, so the words on the buttons reach the contrast target
   accounts: { bg: '#313070', btn: '#ffa3db', label: '#313070' }, // (the palette's purple text is too faint on the pink button, the navy reads)
   fixed:    { bg: '#ea9ab2', btn: '#ffffff', label: '#337357' },
 }
@@ -40,6 +41,20 @@ describe('the colours of each onboarding page', () => {
     })
   }
 
+  it('text boxes use the button colour, and what is typed uses the colour of the words on the buttons', () => {
+    const rule = /\.lime \.field, \.lime \.name-input \{([^}]*)\}/.exec(css)
+    expect(rule, 'the text box rule is missing').not.toBeNull()
+    expect(rule[1]).toMatch(/background:\s*var\(--btn/)
+    expect(rule[1]).toMatch(/color:\s*var\(--btn-ink/)
+  })
+
+  it('every kind of button on these pages uses the button colours: wide buttons (also the ghost ones), the round back and remove buttons, and Not now', () => {
+    expect(css).toMatch(/\.lime \.btn \{[^}]*background:\s*var\(--btn[^}]*color:\s*var\(--btn-ink/)
+    expect(css).toMatch(/\.lime \.pill\.on \{[^}]*background:\s*var\(--btn[^}]*color:\s*var\(--btn-ink/)
+    expect(css).toMatch(/\.lime \.x-btn \{[^}]*background:\s*var\(--btn[^}]*color:\s*var\(--btn-ink/)
+    expect(read('src/components/SignIn.jsx')).toMatch(/<button className="btn" onClick=\{onSkip\}>Not now/)
+  })
+
   const onboarding = read('src/components/Onboarding.jsx')
   const signIn = read('src/components/SignIn.jsx')
 
@@ -51,8 +66,8 @@ describe('the colours of each onboarding page', () => {
     expect(/export function NameStep[\s\S]*?className="lime state"/.test(onboarding)).toBe(true)
   })
 
-  it('counties, accounts and fixed expenses have their own colours, and payment methods keeps the normal theme', () => {
+  it('counties, payment methods, accounts and fixed expenses each have their own colours', () => {
     const tones = Object.fromEntries([...onboarding.matchAll(/h: '([^']+)'[^\n]*?C: (\w+)[^\n]*?next: '[^']+'(?:, tone: '(\w+)')?/g)].map((m) => [m[2], m[3] || null]))
-    expect(tones).toEqual({ CountiesEditor: 'counties', MethodsEditor: null, AccountsEditor: 'accounts', FixedEditor: 'fixed' })
+    expect(tones).toEqual({ CountiesEditor: 'counties', MethodsEditor: 'payments', AccountsEditor: 'accounts', FixedEditor: 'fixed' })
   })
 })
