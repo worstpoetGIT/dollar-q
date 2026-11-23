@@ -45,7 +45,7 @@ function Billboard({ name }) {
 export function NameStep({ onDone }) {
   const [name, setName] = useState('')
   return (
-    <div className="lime">
+    <div className="lime ocean">
       <div className="body">
         <Steps at={0} />
         <h1 className="fade-up">A state<br />with your name.</h1>
@@ -64,10 +64,10 @@ export function NameStep({ onDone }) {
 }
 
 const STEPS = [
-  { h: 'Name your counties.', p: "Counties are your spending categories. Each one becomes a building on the map. Rename them, regroup them, or add up to 12.", C: CountiesEditor, next: 'Continue' },
+  { h: 'Name your counties.', p: "Counties are your spending categories. Each one becomes a building on the map. Rename them, regroup them, or add up to 12.", C: CountiesEditor, next: 'Continue', tone: 'cherry' },
   { h: 'Pick your payment cultures.', p: 'How do you pay? Add up to 5 of each kind. They show up when you log an expense.', C: MethodsEditor, next: 'Continue' },
-  { h: 'Accounts and currencies.', p: 'Up to 5 accounts, each with one currency. Spend in EUR and INR? Make two.', C: AccountsEditor, next: 'Continue' },
-  { h: 'Fixed expenses.', p: "Subscriptions and rent that debit on a fixed day. Add them once and they're logged automatically. You can skip this.", C: FixedEditor, next: 'Enter my state' },
+  { h: 'Accounts and currencies.', p: 'Up to 5 accounts, each with one currency. Spend in EUR and INR? Make two.', C: AccountsEditor, next: 'Continue', tone: 'vanilla' },
+  { h: 'Fixed expenses.', p: "Subscriptions and rent that debit on a fixed day. Add them once and they're logged automatically. You can skip this.", C: FixedEditor, next: 'Enter my state', tone: 'avocado' },
 ]
 
 export function Wizard({ s, onDone }) {
@@ -76,10 +76,10 @@ export function Wizard({ s, onDone }) {
   const C = st.C
   const last = i === STEPS.length - 1
   return (
-    <div className="lime">
+    <div className={'lime' + (st.tone ? ' ' + st.tone : '')}>
       <div className="body" key={i}>
         <div className="row" style={{ marginBottom: 6 }}>
-          {i > 0 && <button className="x-btn" style={{ background: 'rgba(0,0,0,.08)' }} onClick={() => setI(i - 1)}><Icon name="left" size={18} /></button>}
+          {i > 0 && <button className="x-btn" onClick={() => setI(i - 1)} aria-label="Back"><Icon name="left" size={18} /></button>}
           <div style={{ flex: 1 }}><Steps at={i + 1} /></div>
         </div>
         <h1 className="fade-up" style={{ fontSize: 43.2 }}>{st.h}</h1>

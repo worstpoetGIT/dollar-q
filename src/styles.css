@@ -93,6 +93,17 @@ select.field { appearance: none; -webkit-appearance: none; }
 .lime h1 { font-family: 'Archivo Black'; font-size: 52.8px; line-height: 1.02; margin: 4px 0 16px; letter-spacing: -0.035em; }
 .name-input { width: 100%; background: none; border: 0; border-bottom: 2px solid var(--ink-2); font-family: 'Archivo Black'; font-size: 36px; padding: 10px 0; outline: none; color: var(--ink); -webkit-user-select: text; user-select: text; letter-spacing: -0.02em; }
 
+/* a colour for each onboarding page. every tone sets its own text, error and surface colours, so what is on the page stays readable
+   (tests/tones.test.js checks the contrast). light and dark mode do not change these, the colours are the same for everybody. */
+.lime { transition: background-color .3s, color .3s; }
+.lime.sand    { --bg: #f5deb3; --ink: #003366; --ink-2: #365977; --red: #a31217; --line: rgba(0, 51, 102, .28); --surface: transparent; --surface-2: rgba(0, 51, 102, .09); --press: rgba(0, 51, 102, .14); --track: rgba(0, 51, 102, .12); --shadow: none; }
+.lime.ocean   { --bg: #003366; --ink: #f5deb3; --ink-2: #bfb8a2; --red: #ffd6d6; --line: rgba(245, 222, 179, .3); --surface: transparent; --surface-2: rgba(245, 222, 179, .12); --press: rgba(245, 222, 179, .18); --track: rgba(245, 222, 179, .16); --shadow: none; }
+.lime.cherry  { --bg: #9a0002; --ink: #efe6de; --ink-2: #dcb3ae; --red: #ffd6d6; --line: rgba(239, 230, 222, .32); --surface: transparent; --surface-2: rgba(239, 230, 222, .13); --press: rgba(239, 230, 222, .2); --track: rgba(239, 230, 222, .18); --shadow: none; }
+.lime.vanilla { --bg: #efe6de; --ink: #9a0002; --ink-2: #ad3332; --red: #7a0b0f; --line: rgba(154, 0, 2, .26); --surface: transparent; --surface-2: rgba(154, 0, 2, .08); --press: rgba(154, 0, 2, .13); --track: rgba(154, 0, 2, .11); --shadow: none; }
+.lime.avocado { --bg: #568203; --ink: #fffef4; --ink-2: #fffef4; --red: #fffef4; --line: rgba(255, 254, 244, .36); --surface: transparent; --surface-2: rgba(255, 254, 244, .16); --press: rgba(255, 254, 244, .24); --track: rgba(255, 254, 244, .2); --shadow: none; }
+/* the county icons keep their own colour, so on the dark pages they sit on a light circle (a red icon on cherry red would vanish) */
+.lime.ocean .ico-circle, .lime.cherry .ico-circle, .lime.avocado .ico-circle { background: rgba(255, 254, 244, .92) !important; }
+
 /* sheet */
 .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60; animation: fade .2s both; }
 @keyframes fade { from { opacity: 0; } }
