@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
-// the colour of each onboarding page, and that the text on it can be read
+// the colours of each onboarding page, and that the words on it can be read
 const read = (p) => readFileSync(new URL('../' + p, import.meta.url), 'utf8')
 const css = read('src/styles.css')
 
@@ -13,36 +13,46 @@ const tone = (name) => {
   const block = new RegExp('\\.lime\\.' + name + '\\s*\\{([^}]*)\\}').exec(css)
   expect(block, name + ' is missing in styles.css').not.toBeNull()
   const get = (v) => new RegExp('--' + v + ':\\s*(#[0-9a-fA-F]{6})').exec(block[1])?.[1].toLowerCase()
-  return { bg: get('bg'), ink: get('ink'), ink2: get('ink-2'), red: get('red') }
+  return { bg: get('bg'), ink: get('ink'), ink2: get('ink-2'), red: get('red'), btn: get('btn'), label: get('btn-ink') }
 }
 
-// the colours chosen for each page
-const WANTED = { sand: '#f5deb3', ocean: '#003366', cherry: '#9a0002', vanilla: '#efe6de', avocado: '#568203' }
+// from the palettes: the page background, the button colour and the colour of the words on the buttons
+const PALETTES = {
+  email:    { bg: '#f4721e', btn: '#4d6080', label: '#e9d9ca' }, // orange, blue, cream
+  state:    { bg: '#0f3d3a', btn: '#f5dabf', label: '#6c151e' }, // green, cream, bordo
+  counties: { bg: '#58b561', btn: '#ffe991', label: '#854606' },
+  accounts: { bg: '#313070', btn: '#ffa3db', label: '#313070' }, // (the palette's purple text is too faint on the pink button, the navy reads)
+  fixed:    { bg: '#ea9ab2', btn: '#ffffff', label: '#337357' },
+}
 
-describe('the colour of each onboarding page', () => {
-  for (const [name, bg] of Object.entries(WANTED)) {
-    it(`${name} is ${bg}, and its text, muted text and errors can be read`, () => {
+describe('the colours of each onboarding page', () => {
+  for (const [name, want] of Object.entries(PALETTES)) {
+    it(`${name}: the chosen background, button and button label, and everything can be read`, () => {
       const t = tone(name)
-      expect(t.bg).toBe(bg)
-      expect(contrast(t.bg, t.ink)).toBeGreaterThanOrEqual(4.5)
-      expect(contrast(t.bg, t.ink2)).toBeGreaterThanOrEqual(4.5)
-      expect(contrast(t.bg, t.red)).toBeGreaterThanOrEqual(4.5)
+      expect(t.bg).toBe(want.bg)
+      expect(t.btn).toBe(want.btn)
+      expect(t.label).toBe(want.label)
+      expect(contrast(t.bg, t.ink)).toBeGreaterThanOrEqual(4.5)   // page text
+      expect(contrast(t.bg, t.ink2)).toBeGreaterThanOrEqual(4.5)  // muted text
+      expect(contrast(t.bg, t.red)).toBeGreaterThanOrEqual(4.5)   // errors
+      expect(contrast(t.btn, t.label)).toBeGreaterThanOrEqual(4.5) // the words on the buttons
+      expect(contrast(t.bg, t.btn)).toBeGreaterThanOrEqual(2)     // a button stands out from the page
     })
   }
 
   const onboarding = read('src/components/Onboarding.jsx')
   const signIn = read('src/components/SignIn.jsx')
 
-  it('sign in is sand', () => {
-    expect(signIn).toMatch(/className="lime sand"/)
+  it('sign in is the email page', () => {
+    expect(signIn).toMatch(/className="lime email"/)
   })
 
-  it('enter the state is ocean deep', () => {
-    expect(/export function NameStep[\s\S]*?className="lime ocean"/.test(onboarding)).toBe(true)
+  it('enter the state has its own colours', () => {
+    expect(/export function NameStep[\s\S]*?className="lime state"/.test(onboarding)).toBe(true)
   })
 
-  it('counties, accounts and fixed expenses have their own colour, and payment methods keeps the normal theme', () => {
+  it('counties, accounts and fixed expenses have their own colours, and payment methods keeps the normal theme', () => {
     const tones = Object.fromEntries([...onboarding.matchAll(/h: '([^']+)'[^\n]*?C: (\w+)[^\n]*?next: '[^']+'(?:, tone: '(\w+)')?/g)].map((m) => [m[2], m[3] || null]))
-    expect(tones).toEqual({ CountiesEditor: 'cherry', MethodsEditor: null, AccountsEditor: 'vanilla', FixedEditor: 'avocado' })
+    expect(tones).toEqual({ CountiesEditor: 'counties', MethodsEditor: null, AccountsEditor: 'accounts', FixedEditor: 'fixed' })
   })
 })

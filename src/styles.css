@@ -93,16 +93,19 @@ select.field { appearance: none; -webkit-appearance: none; }
 .lime h1 { font-family: 'Archivo Black'; font-size: 52.8px; line-height: 1.02; margin: 4px 0 16px; letter-spacing: -0.035em; }
 .name-input { width: 100%; background: none; border: 0; border-bottom: 2px solid var(--ink-2); font-family: 'Archivo Black'; font-size: 36px; padding: 10px 0; outline: none; color: var(--ink); -webkit-user-select: text; user-select: text; letter-spacing: -0.02em; }
 
-/* a colour for each onboarding page. every tone sets its own text, error and surface colours, so what is on the page stays readable
-   (tests/tones.test.js checks the contrast). light and dark mode do not change these, the colours are the same for everybody. */
+/* a colour for each onboarding page: its background, its button colour, and the colour of the words on the buttons come straight from the
+   chosen palettes. the page text is the closest shade of the palette that can still be read (tests/tones.test.js checks the contrast).
+   light and dark mode do not change these, the colours are the same for everybody. */
 .lime { transition: background-color .3s, color .3s; }
-.lime.sand    { --bg: #f5deb3; --ink: #003366; --ink-2: #365977; --red: #a31217; --line: rgba(0, 51, 102, .28); --surface: transparent; --surface-2: rgba(0, 51, 102, .09); --press: rgba(0, 51, 102, .14); --track: rgba(0, 51, 102, .12); --shadow: none; }
-.lime.ocean   { --bg: #003366; --ink: #f5deb3; --ink-2: #bfb8a2; --red: #ffd6d6; --line: rgba(245, 222, 179, .3); --surface: transparent; --surface-2: rgba(245, 222, 179, .12); --press: rgba(245, 222, 179, .18); --track: rgba(245, 222, 179, .16); --shadow: none; }
-.lime.cherry  { --bg: #9a0002; --ink: #efe6de; --ink-2: #dcb3ae; --red: #ffd6d6; --line: rgba(239, 230, 222, .32); --surface: transparent; --surface-2: rgba(239, 230, 222, .13); --press: rgba(239, 230, 222, .2); --track: rgba(239, 230, 222, .18); --shadow: none; }
-.lime.vanilla { --bg: #efe6de; --ink: #9a0002; --ink-2: #ad3332; --red: #7a0b0f; --line: rgba(154, 0, 2, .26); --surface: transparent; --surface-2: rgba(154, 0, 2, .08); --press: rgba(154, 0, 2, .13); --track: rgba(154, 0, 2, .11); --shadow: none; }
-.lime.avocado { --bg: #568203; --ink: #fffef4; --ink-2: #fffef4; --red: #fffef4; --line: rgba(255, 254, 244, .36); --surface: transparent; --surface-2: rgba(255, 254, 244, .16); --press: rgba(255, 254, 244, .24); --track: rgba(255, 254, 244, .2); --shadow: none; }
-/* the county icons keep their own colour, so on the dark pages they sit on a light circle (a red icon on cherry red would vanish) */
-.lime.ocean .ico-circle, .lime.cherry .ico-circle, .lime.avocado .ico-circle { background: rgba(255, 254, 244, .92) !important; }
+.lime .btn { background: var(--btn, var(--ink)); color: var(--btn-ink, var(--bg)); }
+.lime.email { --bg: #f4721e; --ink: #232c3b; --ink-2: #3c2d29; --red: #232c3b; --btn: #4d6080; --btn-ink: #e9d9ca; --line: rgba(35, 44, 59, .3); --surface: transparent; --surface-2: rgba(35, 44, 59, .1); --press: rgba(35, 44, 59, .16); --track: rgba(35, 44, 59, .14); --shadow: none; }
+.lime.state { --bg: #0f3d3a; --ink: #f5dabf; --ink-2: #c7bba4; --red: #ffd6d6; --btn: #f5dabf; --btn-ink: #6c151e; --line: rgba(245, 218, 191, .3); --surface: transparent; --surface-2: rgba(245, 218, 191, .1); --press: rgba(245, 218, 191, .16); --track: rgba(245, 218, 191, .14); --shadow: none; }
+.lime.counties { --bg: #58b561; --ink: #522b04; --ink-2: #423812; --red: #522b04; --btn: #ffe991; --btn-ink: #854606; --line: rgba(82, 43, 4, .3); --surface: transparent; --surface-2: rgba(82, 43, 4, .1); --press: rgba(82, 43, 4, .16); --track: rgba(82, 43, 4, .14); --shadow: none; }
+.lime.accounts { --bg: #313070; --ink: #b297f5; --ink-2: #a896e0; --red: #ffd6d6; --btn: #ffa3db; --btn-ink: #313070; --line: rgba(178, 151, 245, .3); --surface: transparent; --surface-2: rgba(178, 151, 245, .1); --press: rgba(178, 151, 245, .16); --track: rgba(178, 151, 245, .14); --shadow: none; }
+.lime.fixed { --bg: #ea9ab2; --ink: #204736; --ink-2: #3a4740; --red: #7a0b0f; --btn: #ffffff; --btn-ink: #337357; --line: rgba(32, 71, 54, .3); --surface: transparent; --surface-2: rgba(32, 71, 54, .1); --press: rgba(32, 71, 54, .16); --track: rgba(32, 71, 54, .14); --shadow: none; }
+
+/* the county icons keep their own colour, so on these pages they sit on a light circle (a red icon on red would vanish) */
+.lime.email .ico-circle, .lime.state .ico-circle, .lime.counties .ico-circle, .lime.accounts .ico-circle, .lime.fixed .ico-circle { background: rgba(255, 254, 244, .92) !important; }
 
 /* sheet */
 .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60; animation: fade .2s both; }
