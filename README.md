@@ -133,7 +133,7 @@ The iPhone file is **not signed**, because Apple only lets you run signed apps a
 
 On your phone, in a database. If you delete the app, the data goes with it, so use **Profile, Data, Export backup** now and then. It makes a `.json` file you can save to Files or AirDrop to yourself, and **Import backup** brings everything back. Importing asks you before it replaces anything and keeps one undo.
 
-**Signing in is optional.** If you sign in with your email (you get a 6 digit code, no password), your expenses sync between your phones and you get them back if you lose one. Then a copy of your data is also on my server in Ireland-region Oracle Cloud, in a PostgreSQL database that is backed up every hour, encrypted. Only your own account can read it, and **Profile, Account** can delete the account and the copy for good. The data on your phone stays. If two phones change the same expense, the newest edit wins.
+**Signing in is optional.** If you sign in with your email (you get a 6 digit code, no password), your expenses sync between your phones and you get them back if you lose one. Then a copy of your data is also on my server in Ireland-region Oracle Cloud, in a PostgreSQL database that is backed up every 30 minutes, encrypted, with each person's data in their own file. The database itself only shows you your own rows, and **Profile, Account** can delete the account and the live copy for good. The encrypted backups age out on their own (a daily copy for 30 days, a weekly one for a year). The data on your phone stays. If two phones change the same expense, the newest edit wins.
 
 ### Tech Stack
 
@@ -148,7 +148,10 @@ On your phone, in a database. If you delete the app, the data goes with it, so u
 | Native plugins | Haptics, Preferences, Filesystem, Share, Status Bar |
 | Tests | Vitest |
 | Storage | SQLite on the phone (`@capacitor-community/sqlite`), with the old saved copy kept as a mirror. A browser falls back to `localStorage` |
-| Sign in and sync | Email codes and sync against my own small server: Node 22, Fastify, PostgreSQL, Caddy, on an Oracle Cloud free tier VM. Login emails go through Resend. The token lives in the Keychain or Android Keystore |
+| Sign in and sync | Email codes and sync against my own small server: Node 22 and Fastify, with last-writer-wins sync per record. Login emails go through Resend. The token lives in the Keychain or Android Keystore |
+| Database | PostgreSQL 16. Everyone's rows share the tables, and **row-level security** makes the database itself show each request only its own person's rows. The API connects as a limited login that cannot skip the rules or change the tables, so even a bug or a query with no `WHERE` cannot leak data |
+| Hosting | One Always Free Arm VM on Oracle Cloud, Docker Compose, Caddy for HTTPS (Let's Encrypt), DNS on Cloudflare. fail2ban, unattended upgrades and key-only SSH |
+| Backups | Every 30 minutes, from one database snapshot: the whole database plus a separate file per person in a folder named by their email, all encrypted with age (only my Raspberry Pi holds the key). The Pi pulls them over a read-only SSH account, keeps a rolling history, and checks that every file comes from the same run |
 | CI | GitHub Actions. Tests and a web build on every branch and pull request, a dependency audit, CodeQL once a week, and on `main` an Ubuntu runner (Java 21, Gradle) builds the APK and a macOS runner (`xcodebuild`) builds the IPA. All actions are pinned to a commit |
 | Targets | Android 7 and up (minSdk 24, target 36), iOS 15 and up |
 
@@ -226,7 +229,7 @@ I tried to attack my own app before sharing it, and fixed what I found:
 - A strict content security policy only lets the app run its own code and talk to nothing else.
 - Imported backup files are treated as untrusted, and shown to you before they replace anything.
 - Android's cloud backup is switched off.
-- The server never trusts the phone: it checks every record again and works out each share itself. Login codes are stored hashed and expire after 10 minutes, sessions are opaque tokens whose hash is stored, and there are rate limits on codes and requests.
+- The database keeps people apart itself: row-level security, a limited login for the API, and tests that try to read, change and hand over other people's rows. The server never trusts the phone: it checks every record again and works out each share itself. Login codes are stored hashed and expire after 10 minutes, sessions are opaque tokens whose hash is stored, and there are rate limits on codes and requests.
 - Dependencies are audited on every change, the code is scanned with CodeQL, and the build tools are pinned to exact commits.
 
 If you find something I missed, open an issue.
