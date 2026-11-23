@@ -35,7 +35,20 @@ export function createService(deps) {
     if (!db) return set({ phase: 'unavailable' })
     const token = await session.get()
     if (!token) return set({ phase: 'signedOut', email: '' })
-    set({ phase: 'idle', email: (await getMeta(db, 'account_email')) || '', lastSyncAt: Number(await getMeta(db, 'last_sync_at')) || 0 })
+    const known = await getMeta(db, 'account_email')
+    if (known) return set({ phase: 'idle', email: known, lastSyncAt: Number(await getMeta(db, 'last_sync_at')) || 0 })
+
+    // a login, but this database has never met the account: the app was deleted and installed again (the Keychain keeps the login
+    // through that). so this is a new phone. find out who the login belongs to, then do what a first sign in does:
+    // take the cloud data, and never send this phone's default state up over the real data.
+    try {
+      const who = await api.me()
+      set({ phase: 'idle', email: String(who.email || '').toLowerCase(), working: true })
+      await firstSync()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) await session.clear() // the login is gone on the server
+      set({ phase: 'signedOut', email: '', working: false })
+    }
   }
 
   // ----- signing in -----

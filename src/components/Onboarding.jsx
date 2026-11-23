@@ -42,12 +42,15 @@ function Billboard({ name }) {
   )
 }
 
-export function NameStep({ onDone }) {
-  const [name, setName] = useState('')
+export function NameStep({ initial = '', onBack, onDone }) {
+  const [name, setName] = useState(initial)
   return (
     <div className="lime state">
       <div className="body">
-        <Steps at={0} />
+        <div className="row" style={{ marginBottom: 6 }}>
+          {onBack && <button className="x-btn" onClick={onBack} aria-label="Back"><Icon name="left" size={18} /></button>}
+          <div style={{ flex: 1 }}><Steps at={0} /></div>
+        </div>
         <h1 className="fade-up">A state<br />with your name.</h1>
         <Billboard name={name.trim()} />
         <p className="muted" style={{ margin: '4px 0 18px', fontSize: 19.2 }}>Just a name so the state knows who it belongs to.</p>
@@ -55,7 +58,7 @@ export function NameStep({ onDone }) {
         <input className="name-input" value={name} placeholder="" maxLength={28} onChange={(e) => setName(e.target.value)} autoFocus={false} />
       </div>
       <div className="foot">
-        <button className="btn" disabled={!name.trim()} style={{ opacity: name.trim() ? 1 : 0.35 }} onClick={() => { setState((s) => ({ ...s, stateName: name.trim(), entered: true })); onDone() }}>
+        <button className="btn" disabled={!name.trim()} onClick={() => { setState((s) => ({ ...s, stateName: name.trim(), entered: true })); onDone() }}>
           Enter without Roaming charges
         </button>
       </div>
@@ -70,7 +73,7 @@ const STEPS = [
   { h: 'Fixed expenses.', p: "Subscriptions and rent that debit on a fixed day. Add them once and they're logged automatically. You can skip this.", C: FixedEditor, next: 'Enter my state', tone: 'fixed' },
 ]
 
-export function Wizard({ s, onDone }) {
+export function Wizard({ s, onBack, onDone }) {
   const [i, setI] = useState(0)
   const st = STEPS[i]
   const C = st.C
@@ -79,7 +82,7 @@ export function Wizard({ s, onDone }) {
     <div className={'lime' + (st.tone ? ' ' + st.tone : '')}>
       <div className="body" key={i}>
         <div className="row" style={{ marginBottom: 6 }}>
-          {i > 0 && <button className="x-btn" onClick={() => setI(i - 1)} aria-label="Back"><Icon name="left" size={18} /></button>}
+          {(i > 0 || onBack) && <button className="x-btn" onClick={() => (i > 0 ? setI(i - 1) : onBack())} aria-label="Back"><Icon name="left" size={18} /></button>}
           <div style={{ flex: 1 }}><Steps at={i + 1} /></div>
         </div>
         <h1 className="fade-up" style={{ fontSize: 43.2 }}>{st.h}</h1>

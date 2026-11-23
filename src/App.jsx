@@ -9,6 +9,7 @@ import Profile from './components/Profile.jsx'
 import AddSheet from './components/AddSheet.jsx'
 import { NameStep, Wizard } from './components/Onboarding.jsx'
 import SignIn from './components/SignIn.jsx'
+import { firstRunScreen, hasEmailPage } from './firstRun.js'
 import * as store from './store.js'
 import { useStore, setState, runFixed, ready } from './store.js'
 import { startSync, useSyncStatus } from './sync/service.js'
@@ -27,11 +28,13 @@ export default function App() {
   const [saved, setSaved] = useState(null)
   const [toast, setToast] = useState(null)
   const [histCounty, setHistCounty] = useState(null)
-  // ask for the email first, once. "Not now" is remembered. (nothing to ask on a device without the database)
+  // which of the first pages to show (see firstRun.js). "Not now" is remembered, but only keeps the email page away for an app that is already set up.
   const syncState = useSyncStatus()
-  const [skippedSignIn, setSkippedSignIn] = useState(() => { try { return localStorage.getItem('dollar-q:signin-skipped') === '1' } catch { return false } })
-  const skipSignIn = () => { try { localStorage.setItem('dollar-q:signin-skipped', '1') } catch { /* ignore */ } setSkippedSignIn(true) }
-  const askEmail = !splash && !skippedSignIn && ['signedOut', 'codeSent', 'choosing'].includes(syncState.phase)
+  const [skippedBefore] = useState(() => { try { return localStorage.getItem('dollar-q:signin-skipped') === '1' } catch { return false } })
+  const [skippedNow, setSkippedNow] = useState(false)
+  const [editName, setEditName] = useState(false) // came back to the name page from the first setup page
+  const skipSignIn = () => { try { localStorage.setItem('dollar-q:signin-skipped', '1') } catch { /* ignore */ } setSkippedNow(true) }
+  const screen = firstRunScreen({ splash, phase: syncState.phase, working: syncState.working, entered: s.entered, setupDone: s.setupDone, skippedNow, skippedBefore, editName })
 
   useEffect(() => {
     const el = document.documentElement
@@ -81,7 +84,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {!s.entered && !splash && !askEmail && <NameStep onDone={() => setTab('home')} />}
+      {screen === 'name' && <NameStep initial={s.stateName} onBack={hasEmailPage(syncState.phase) ? () => setSkippedNow(false) : undefined} onDone={() => { setEditName(false); setTab('home') }} />}
       {s.entered && (
         <>
           <Home s={s} active={tab === 'home'} saved={saved}
@@ -103,7 +106,7 @@ export default function App() {
           </nav>
 
           {adding && <AddSheet key={adding.edit ? adding.edit.id : 'new'} s={s} countyId={adding.countyId} edit={adding.edit} onClose={() => setAdding(null)} onSaved={onSaved} />}
-          {!s.setupDone && !splash && !askEmail && <Wizard s={s} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
+          {screen === 'wizard' && <Wizard s={s} onBack={() => setEditName(true)} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
         </>
       )}
       {toast && (
@@ -112,7 +115,7 @@ export default function App() {
           <div><div style={{ fontSize: 14.4, opacity: 0.7 }}>{toast.sub}</div><b>{toast.text}</b></div>
         </div>
       )}
-      {askEmail && <SignIn onSkip={skipSignIn} />}
+      {screen === 'email' && <SignIn onSkip={skipSignIn} />}
       {splash && <Splash onDone={() => setSplash(false)} />}
     </div>
   )
