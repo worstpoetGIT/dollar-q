@@ -14,17 +14,19 @@ const exp = (id, over = {}) => ({ id, countyId: 'c1', amount: 10, total: 10, acc
 const memory = () => { const m = new Map(); return { get: async (k) => m.get(k) ?? null, set: async (k, v) => m.set(k, v), remove: async (k) => m.delete(k), map: m } }
 
 // a phone with the service running on it. `state` is what the screens would show.
-async function phone(cloud, { entered = true, expenses = [] } = {}) {
+async function phone(cloud, { entered = true, expenses = [], token = null, defaults = false, meError = null } = {}) {
   const db = nodeDb()
   await ensureSchema(db)
   const holder = { state: { ...base(), entered, expenses } }
-  if (entered) await importState(db, holder.state, 5000)
+  if (entered || defaults) await importState(db, holder.state, entered ? 5000 : Date.now()) // defaults: a new install puts its default state in the database
   const store = memory()
+  if (token) await store.set('dollarq-session', token) // a login the Keychain kept from before
   const auth = { codes: new Map(), accounts: new Map(), token: null }
   const api = {
     ...cloud.api,
     requestCode: async (email) => { if (auth.fail) throw new ApiError(503, 'could not send'); auth.codes.set(email.trim().toLowerCase(), '123456'); return { ok: true } },
     verify: async (email, code) => { if (auth.codes.get(email.trim().toLowerCase()) !== code) throw new ApiError(401, 'that code is wrong or has run out'); return { token: 'token-' + email } },
+    me: async () => { if (meError) throw meError; const t = await store.get('dollarq-session'); if (!t) throw new ApiError(401, 'no login'); return { email: t.replace('token-', '') } },
     logout: async () => ({ ok: true }),
     deleteAccount: async () => { cloud.rows.clear(); return { ok: true } },
   }
@@ -66,6 +68,60 @@ describe('starting', () => {
     const svc = createService({ getDb: () => null, api: {}, session: createSession(memory()), flush: async () => {}, getState: () => ({}), applySynced: () => {}, clearForCloud: async () => {} })
     await svc.start()
     expect(svc.getStatus().phase).toBe('unavailable')
+  })
+})
+
+describe('a login that survived a reinstall (the Keychain keeps it, the new database has never met the account)', () => {
+  // another phone already put this account's data in the cloud
+  async function cloudWithData() {
+    const first = await phone(cloud, { entered: true, expenses: [exp('e1'), exp('e2')] })
+    first.holder.state = { ...first.holder.state, stateName: 'Mine', setupDone: true }
+    await first.signIn()
+    await first.db.run("update settings set data = ?, dirty = 1, updated_at = 6000", [JSON.stringify({ entered: true, setupDone: true, stateName: 'Mine', currency: 'INR' })])
+    await first.svc.syncNow()
+    return first
+  }
+
+  it('does not treat the phone as already signed in: it takes the cloud data, and the default state is not sent up', async () => {
+    await cloudWithData()
+    const before = JSON.stringify([...cloud.rows.entries()].sort())
+    const p = await phone(cloud, { entered: false, defaults: true, token: 'token-boss@example.com' })
+    await p.svc.syncNow()
+    expect(p.st().phase).toBe('idle')
+    expect(p.st().email).toBe('boss@example.com')
+    expect(await getMeta(p.db, 'account_email')).toBe('boss@example.com')
+    expect(await p.ids()).toEqual(['e1', 'e2'])
+    expect((await p.read()).stateName).toBe('Mine')
+    expect(JSON.stringify([...cloud.rows.entries()].sort())).toBe(before) // nothing in the cloud was overwritten
+  })
+
+  it('a brand new account (nothing in the cloud) sends what this phone has', async () => {
+    const p = await phone(cloud, { entered: true, expenses: [exp('n1')], token: 'token-new@example.com' })
+    await p.svc.syncNow()
+    expect(p.st().phase).toBe('idle')
+    expect(await getMeta(p.db, 'account_email')).toBe('new@example.com')
+    expect(cloud.size()).toBe(1)
+  })
+
+  it('a login the server no longer knows sends the person back to the sign in page, with the old login removed', async () => {
+    const p = await phone(cloud, { entered: false, defaults: true, token: 'token-boss@example.com', meError: new ApiError(401, 'no') })
+    expect(p.st().phase).toBe('signedOut')
+    expect(await p.store.get('dollarq-session')).toBeNull()
+  })
+
+  it('no connection at start: shows the sign in page and does not crash or send anything', async () => {
+    await cloudWithData()
+    const sizeBefore = cloud.size()
+    const p = await phone(cloud, { entered: false, defaults: true, token: 'token-boss@example.com', meError: new ApiError(0, 'no connection') })
+    expect(p.st().phase).toBe('signedOut')
+    expect(cloud.size()).toBe(sizeBefore)
+  })
+
+  it('a phone that already knows the account just carries on as before', async () => {
+    const first = await cloudWithData()
+    const again = createService({ getDb: () => first.db, api: first.api, session: createSession(first.store), flush: async () => {}, getState: () => first.holder.state, applySynced: () => {}, clearForCloud: async () => {} })
+    await again.start()
+    expect(again.getStatus().phase).toBe('idle')
   })
 })
 
