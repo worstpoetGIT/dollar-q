@@ -264,30 +264,79 @@ const walkersGo = (sig, axis) => sig.mode === 'green' && sig.phase === axis // p
 
 // ---------- turning ----------
 
-// the curve through the crossroad: from where the car's middle is at the edge of the crossroad, to where it leaves on the other road.
-// right is a small curve, left a wide one (it has to cross). a0 and a1 are the two directions from the centre of the curve, so the
-// car is at centre + a0 cos(t) + a1 sin(t) for t from 0 to a quarter turn.
+// the curve through the crossroad is a table of points (position and heading) along it. a right turn is a small circle. a left turn has
+// to cross, and the signal pole stands in the middle, so it is a curve that bulges out round the pole as far as this vehicle needs.
+const POLE = 0.3 // how far the body of a vehicle should stay from the middle of the crossroad (the pole is about 0.2 wide at most)
+
+function curveTable(start, h, side, kind, k) {
+  const R = kind === 'right' ? BOX - LANE : BOX + LANE
+  const end = [start[0] + (side[0] + h[0]) * R, start[1] + (side[1] + h[1]) * R]
+  const pts = []
+  const N = 48
+  for (let i = 0; i <= N; i++) {
+    const f = i / N
+    if (kind === 'right') {
+      const a = (f * Math.PI) / 2, cs = Math.cos(a), sn = Math.sin(a)
+      const centre = [start[0] + side[0] * R, start[1] + side[1] * R]
+      pts.push({ x: centre[0] - side[0] * R * cs + h[0] * R * sn, z: centre[1] - side[1] * R * cs + h[1] * R * sn, hx: side[0] * sn + h[0] * cs, hz: side[1] * sn + h[1] * cs, s: 0 })
+    } else { // cubic curve that leaves along my heading and arrives along the new road
+      const p1 = [start[0] + h[0] * k, start[1] + h[1] * k], p2 = [end[0] - side[0] * k, end[1] - side[1] * k]
+      const u = 1 - f
+      const d = [3 * u * u * (p1[0] - start[0]) + 6 * u * f * (p2[0] - p1[0]) + 3 * f * f * (end[0] - p2[0]), 3 * u * u * (p1[1] - start[1]) + 6 * u * f * (p2[1] - p1[1]) + 3 * f * f * (end[1] - p2[1])]
+      const n = Math.hypot(d[0], d[1]) || 1
+      pts.push({ x: u * u * u * start[0] + 3 * u * u * f * p1[0] + 3 * u * f * f * p2[0] + f * f * f * end[0], z: u * u * u * start[1] + 3 * u * u * f * p1[1] + 3 * u * f * f * p2[1] + f * f * f * end[1], hx: d[0] / n, hz: d[1] / n, s: 0 })
+    }
+  }
+  for (let i = 1; i < pts.length; i++) pts[i].s = pts[i - 1].s + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+  return { pts, len: pts[pts.length - 1].s }
+}
+
+// how close the body of a vehicle comes to the middle of the crossroad along a curve
+function poleGap(pts, hl, hw) {
+  let least = Infinity
+  for (const p of pts) {
+    const a = -p.x * p.hx - p.z * p.hz, b = p.x * p.hz - p.z * p.hx // the pole as seen from the vehicle: along it, and across it
+    least = Math.min(least, Math.hypot(Math.max(Math.abs(a) - hl, 0), Math.max(Math.abs(b) - hw, 0)))
+  }
+  return least
+}
+
+// does a vehicle of this size get round the corner without touching the pole (at least as well as it passes it driving straight)? and with which bulge?
+// every approach looks the same turned round, so one is enough to work it out.
+const fits = new Map()
+export function turnFits(hl, hw, kind) {
+  const key = kind + hl + 'x' + hw
+  if (fits.has(key)) return fits.get(key)
+  const want = Math.min(POLE, LANE - hw) - 0.005
+  const start = [-BOX, LANE], h = [1, 0], side = kind === 'right' ? [0, 1] : [0, -1]
+  let out = { ok: false, k: 0 }
+  if (kind === 'right') out = { ok: poleGap(curveTable(start, h, side, kind, 0).pts, hl, hw) >= want, k: 0 }
+  else for (let k = 1.2; k <= 4.2; k += 0.1) if (poleGap(curveTable(start, h, side, kind, k).pts, hl, hw) >= want) { out = { ok: true, k }; break }
+  fits.set(key, out)
+  return out
+}
+
 function turnArc(c) {
   const h = c.axis === 'x' ? [c.dir, 0] : [0, c.dir]
   const start = c.axis === 'x' ? [-c.dir * BOX, c.lat] : [c.lat, -c.dir * BOX]
   const side = c.turn === 'right' ? [-h[1], h[0]] : [h[1], -h[0]] // the way the car turns
-  const R = c.turn === 'right' ? BOX - LANE : BOX + LANE
-  const centre = [start[0] + side[0] * R, start[1] + side[1] * R]
+  const { pts, len } = curveTable(start, h, side, c.turn, turnFits(c.hl, c.hw, c.turn).k)
   const newAxis = c.axis === 'x' ? 'z' : 'x'
   const dir2 = newAxis === 'z' ? side[1] : side[0]
-  return {
-    kind: c.turn, centre, R, a0: [start[0] - centre[0], start[1] - centre[1]], a1: [h[0] * R, h[1] * R], len: (R * Math.PI) / 2, s: 0,
-    newAxis, dir2, lat2: newAxis === 'x' ? dir2 * LANE : -dir2 * LANE, x: start[0], z: start[1], hx: h[0], hz: h[1],
-  }
+  return { kind: c.turn, pts, len, s: 0, newAxis, dir2, lat2: newAxis === 'x' ? dir2 * LANE : -dir2 * LANE, x: start[0], z: start[1], hx: h[0], hz: h[1] }
 }
 
 // where on the curve a car is after driving s along it
 function arcPoint(a, s) {
-  const f = Math.min(s / a.R, Math.PI / 2)
-  const cs = Math.cos(f), sn = Math.sin(f)
-  const hx = -a.a0[0] * sn + a.a1[0] * cs, hz = -a.a0[1] * sn + a.a1[1] * cs
+  const pts = a.pts
+  const d = Math.max(0, Math.min(a.len, s))
+  let i = 1
+  while (i < pts.length - 1 && pts[i].s < d) i++
+  const p = pts[i - 1], q = pts[i]
+  const f = q.s > p.s ? (d - p.s) / (q.s - p.s) : 0
+  const hx = p.hx + (q.hx - p.hx) * f, hz = p.hz + (q.hz - p.hz) * f
   const n = Math.hypot(hx, hz) || 1
-  return { x: a.centre[0] + a.a0[0] * cs + a.a1[0] * sn, z: a.centre[1] + a.a0[1] * cs + a.a1[1] * sn, hx: hx / n, hz: hz / n }
+  return { x: p.x + (q.x - p.x) * f, z: p.z + (q.z - p.z) * f, hx: hx / n, hz: hz / n }
 }
 
 function placeOnArc(c) {
@@ -453,7 +502,8 @@ export function spawnCar(cars, rng, anywhere = false) {
     p = a + rng() * (b - a)
   }
   const r = rng()
-  const turn = passed || c.hl >= 1.8 || r < 0.7 ? 'straight' : r < 0.88 ? 'right' : 'left' // most go straight on, a few turn right, fewer turn left (a long train does not fit round the corner)
+  let turn = passed || r < 0.7 ? 'straight' : r < 0.88 ? 'right' : 'left' // most go straight on, a few turn right, fewer turn left
+  if (turn !== 'straight' && (c.hl >= 1.8 || !turnFits(c.hl, c.hw, turn).ok)) turn = 'straight' // a vehicle that would brush the pole or does not fit round the corner goes straight on
   Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null })
   c.speed = c.base
   if (!roomFor(c, cars)) { c.active = false; return null }

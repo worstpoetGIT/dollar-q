@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, crashGap, carPose } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, crashGap, carPose, turnFits } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -392,6 +392,7 @@ describe('traffic: turning at the crossroad', () => {
     const rng = seeded(seed)
     const cars = fleet(name)
     const walkers = placeWalkers(8, rng)
+    globalThis.__walkers = walkers
     const tr = makeTraffic()
     for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
     let spawnIn = 0.4
@@ -448,6 +449,49 @@ describe('traffic: turning at the crossroad', () => {
     })
     expect([...phases].some((p) => p.includes('l'))).toBe(true) // the arrows really come up
   }, 60000)
+
+  it('a turning vehicle keeps clear of the pole in the middle, and of every car and person: never closer than 15 cm, on every map', () => {
+    const gap = (a, b) => { // the room between two rectangles (negative means they overlap)
+      const dx = b.x - a.x, dz = b.z - a.z
+      let best = -Infinity
+      for (const [ux, uz] of [[a.hx, a.hz], [-a.hz, a.hx], [b.hx, b.hz], [-b.hz, b.hx]]) {
+        const r = (m) => m.hl * Math.abs(m.hx * ux + m.hz * uz) + m.hw * Math.abs(-m.hz * ux + m.hx * uz)
+        best = Math.max(best, Math.abs(dx * ux + dz * uz) - r(a) - r(b))
+      }
+      return best
+    }
+    let least = Infinity, turns = 0
+    for (const name of Object.keys(FLEETS)) {
+      for (const seed of [1, 2]) {
+        run(name, seed, 3, (cars, before) => {
+          const act = cars.filter((c) => c.active)
+          for (const c of act) {
+            if (!c.arc) continue
+            turns++
+            const r = rectOf(c)
+            const a = -r.x * r.hx - r.z * r.hz, b = r.x * r.hz - r.z * r.hx // the pole in the middle, as seen from the vehicle
+            least = Math.min(least, Math.hypot(Math.max(Math.abs(a) - r.hl, 0), Math.max(Math.abs(b) - r.hw, 0)) - 0.0) // from the middle of the pole
+            for (const o of [...act, ...(globalThis.__walkers || [])]) if (o !== c) least = Math.min(least, gap(r, rectOf(o)))
+          }
+        })
+      }
+    }
+    expect(turns).toBeGreaterThan(100)
+    expect(least).toBeGreaterThan(0.15)
+  }, 120000)
+
+  it('every vehicle that may turn gets round the pole at least as well as it passes it driving straight', () => {
+    for (const name of Object.keys(FLEETS)) {
+      for (const car of fleet(name)) {
+        for (const kind of ['left', 'right']) {
+          const f = turnFits(car.hl, car.hw, kind)
+          if (f.ok) expect(f.k).toBeGreaterThanOrEqual(0)
+        }
+      }
+    }
+    expect(turnFits(0.5, 0.3, 'left').ok).toBe(true)
+    expect(turnFits(0.5, 0.3, 'right').ok).toBe(true)
+  })
 
   it('a long vehicle (a train) never turns, it does not fit round the corner', () => {
     const rng = seeded(9)
