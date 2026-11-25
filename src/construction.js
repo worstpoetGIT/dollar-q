@@ -231,7 +231,7 @@ export const LIFT_OFF = 1.1 // the old roof goes up and away
 // when everything happens. times are seconds from the start; 'speed' > 1 when more levels are waiting behind this one.
 // order: old roof off, fence + pit + footing, frame floor by floor (the crane lays the decks), walls (bricks), windows, roof (crane), paint from the top down, scaffold off
 export function timeline(plan, kit, speed = 1) {
-  const sp = Math.max(1, speed)
+  const sp = Math.max(0.25, speed)
   const { bricks, kit: used } = allBricks(plan.walls, kit)
 
   const removes = plan.removed.map((o) => ({ d: o, start: 0.5 / sp, dur: LIFT_OFF / sp }))
@@ -345,6 +345,18 @@ export function timeline(plan, kit, speed = 1) {
   const end = Math.max(paintEnd, piecesEnd) + 0.9 / sp // the scaffold comes down
 
   return { bricks: order, kit: used, removes, site, frame, panes, pieces, courseEnd, brickStart, lastBrick, windowsEnd, wallBottom, topAll, paintStart, paintTime, paintEnd, end, dt, flight, perSide, speed: sp, scaffoldAt: siteEnd }
+}
+
+// the whole build in a fixed time: the same steps in the same order, squeezed (or stretched) until it takes 'seconds' from first to last
+export const BUILD_SECONDS = 7
+export function timelineWithin(plan, kit, seconds = BUILD_SECONDS) {
+  let sp = 1
+  let tl = timeline(plan, kit, sp)
+  for (let i = 0; i < 4 && Math.abs(tl.end - seconds) > 0.15; i++) {
+    sp = Math.max(0.25, sp * (tl.end / seconds)) // (the speed that would make it fit; a few rounds because a few things do not scale exactly)
+    tl = timeline(plan, kit, sp)
+  }
+  return tl
 }
 
 // the lower edge of the finished (painted) wall at time t: it starts above the top, and the painters bring it down to the bottom

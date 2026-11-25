@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compare, wallBricks, allBricks, timeline, paintEdge, isWall, pieceMode, openingsOf, windowPanes, frameOf, siteOf, KITS, MAX_BRICKS, CRANE_TIME, FLOOR_H } from '../src/construction.js'
+import { compare, wallBricks, allBricks, timeline, timelineWithin, BUILD_SECONDS, paintEdge, isWall, pieceMode, openingsOf, windowPanes, frameOf, siteOf, KITS, MAX_BRICKS, CRANE_TIME, FLOOR_H } from '../src/construction.js'
 
 const box = (cx, cy, cz, w, h, d, color = 1) => ({ kind: 'box', cx, cy, cz, w, h, d, bottom: cy - h / 2, top: cy + h / 2, color, upright: true })
 const drum = (cx, cy, cz, r, h, color = 1) => ({ kind: 'cyl', cx, cy, cz, rt: r, rb: r, h, seg: 18, bottom: cy - h / 2, top: cy + h / 2, color, upright: true })
@@ -259,4 +259,30 @@ describe('construction: the frame and the site', () => {
     expect(timeline(plan, KITS.city).site).toBeNull()
     expect(siteOf(plan.walls)).toBeNull()
   })
+})
+
+describe('construction: the whole build takes seven seconds', () => {
+  const cases = {
+    'a floor on a classic tower': compare(tower(2), tower(3)),
+    'a whole new tall tower': compare([], tower(5)),
+    'a new small building': compare([], tower(1)),
+    'a floor on a stack (lego, war, court)': compare(stack(2), stack(3)),
+  }
+  for (const [name, plan] of Object.entries(cases)) {
+    for (const [map, kit] of Object.entries(KITS)) {
+      it(`${name} on the ${map} map: first to last in ${BUILD_SECONDS} seconds, in the same order`, () => {
+        const tl = timelineWithin(plan, kit)
+        expect(tl.end).toBeGreaterThan(BUILD_SECONDS - 0.4)
+        expect(tl.end).toBeLessThan(BUILD_SECONDS + 0.4)
+        // still the same steps in the same order
+        if (plan.removed.length) expect(tl.brickStart).toBeGreaterThan(Math.max(...tl.removes.map((r) => r.start + r.dur)))
+        if (tl.site) expect(tl.site.footing.start).toBeGreaterThan(tl.site.pit.start)
+        if (tl.frame.length) expect(Math.min(...tl.frame.map((p) => p.start))).toBeGreaterThanOrEqual(tl.site ? tl.site.footing.start - 1e-9 : 0)
+        expect(tl.paintStart).toBeGreaterThanOrEqual(tl.lastBrick - 1e-9)
+        expect(tl.end).toBeGreaterThan(tl.paintEnd)
+        const crane = [...tl.frame.filter((p) => p.mode === 'crane'), ...tl.pieces.filter((p) => p.mode === 'crane')].sort((a, b) => a.start - b.start)
+        for (let i = 1; i < crane.length; i++) expect(crane[i].start).toBeGreaterThanOrEqual(crane[i - 1].start + crane[i - 1].dur - 1e-9)
+      })
+    }
+  }
 })

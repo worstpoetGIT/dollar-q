@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
 import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from './cityRules.js'
-import { compare, timeline, paintEdge, KITS, LIFT } from './construction.js'
+import { compare, timelineWithin, paintEdge, KITS, LIFT, BUILD_SECONDS } from './construction.js'
 import { poseAt, nextSegment, stances } from './fight.js'
 import { setObstacles, sweepClear, uArc, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
 
@@ -1095,14 +1095,14 @@ export class CityScene {
     const job = lot.queue.shift()
     if (!job) { if (lot.target <= (lot.built ? lot.built.L : 0)) this.setCrane(lot, false); return }
     const pending = Math.max(0, lot.target - lot.built.L) + lot.queue.length * 0.6
-    this.startBuild(lot, job, 1 + 0.7 * pending)
+    this.startBuild(lot, job, BUILD_SECONDS / (1 + 0.3 * pending)) // every build takes 7 seconds; with floors waiting behind it, a bit less
   }
 
-  startBuild(lot, job, speed) {
+  startBuild(lot, job, seconds) {
     const { g, old } = job
     const id = this.T.id
     const plan = compare(old ? this.describe(old.g) : [], this.describe(g))
-    const tl = timeline(plan, KITS[id] || KITS.city, Math.min(5, speed))
+    const tl = timelineWithin(plan, KITS[id] || KITS.city, Math.max(3.5, seconds))
     const kitColors = (BRICK_KITS[id] || BRICK_KITS.city).colors
 
     const site = new THREE.Group() // bricks and scaffold live here, in the same frame as the model
@@ -1426,7 +1426,8 @@ export class CityScene {
       const aimX = load ? load.x : lot.pos.x - 0.55 * lot.size, aimZ = load ? load.z : lot.pos.z - 0.55 * lot.size
       const want = Math.atan2(-(aimZ - cz), aimX - cx) + (load ? 0 : Math.sin(t * 0.5) * 0.5)
       const diff = Math.atan2(Math.sin(want - cu.arm.rotation.y), Math.cos(want - cu.arm.rotation.y))
-      cu.arm.rotation.y += Math.max(-dt * 2.6, Math.min(dt * 2.6, diff))
+      const swing = 2.6 * Math.max(1, tl.speed) // (the arm turns faster when the whole build is squeezed into seven seconds)
+      cu.arm.rotation.y += Math.max(-dt * swing, Math.min(dt * swing, diff))
       B.rope.visible = !!load
       if (load) {
         const tipY = lot.crane.position.y + cu.arm.position.y * cu.grow
