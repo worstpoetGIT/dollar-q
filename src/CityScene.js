@@ -332,6 +332,7 @@ export class CityScene {
     this.rng = mulberry(7)
     this.crashes = [] // staged accidents: two cars that bumped, and the drivers fighting
     this.crashClock = 0
+    this.assess = { ready: false, top: null } // where the money goes, from the last ten days (set by setCounties)
     this.crashDue = false // the dice said an accident should happen: keep trying to place the cars until it works
     this.odds = [] // for every lot: how much is spent in its county, its group and level (what decides where accidents happen)
     this.felling = [] // trees being cut down, with the worker
@@ -489,7 +490,7 @@ export class CityScene {
         const pond = mk(s, new THREE.CylinderGeometry(1.5, 1.5, 0.12, 24), m.water, x + 0.2, 0.2, z + 0.1, false)
         pond.receiveShadow = true
         bx(s, 0.8, 0.12, 3.2, C.bench, x + 0.2, 0.26, z + 0.1)
-        for (const [ox, oz, sc, t] of [[-1.9, -1.8, 1.1, 'r'], [1.9, -1.7, 1, 'p'], [-1.8, 1.8, 1.2, 'p'], [1.8, 1.9, 1, 'r'], [-2.2, 0.1, 0.9, 'r']]) this.tree(x + ox, z + oz, sc, t)
+        for (const [ox, oz, sc, t] of [[-1.9, -1.8, 1.1, 'r'], [1.8, 1.9, 1, 'r']]) this.tree(x + ox, z + oz, sc, t)
         mk(s, new THREE.DodecahedronGeometry(0.42), C.stone, x - 1.2, 0.5, z + 1.1)
       },
       (x, z) => { this.court(x, z, C.court); this.tree(x + 2.9, z - 2.7, 1, 'p') },
@@ -503,7 +504,7 @@ export class CityScene {
       },
       (x, z) => { // grove
         bx(s, 4.6, 0.12, 4.6, C.grove, x, 0.1, z)
-        for (const [ox, oz, sc, t] of [[-1.4, -1.3, 1.2, 'p'], [1.2, -1.5, 1, 'r'], [-1.2, 1.4, 1, 'r'], [1.5, 1.3, 1.3, 'p'], [0, 0, 1.1, 'r']]) this.tree(x + ox, z + oz, sc, t)
+        for (const [ox, oz, sc, t] of [[-1.4, -1.3, 1.2, 'p'], [1.5, 1.3, 1.3, 'p']]) this.tree(x + ox, z + oz, sc, t)
       },
     ]
     const courtCols = [C.park, C.court, C.plaza, C.grove]
@@ -518,8 +519,8 @@ export class CityScene {
       for (const [cx, cz] of this.ring2 ? [[8.0, 4.9], [4.9, 8.0], [8.0, 11.1], [11.1, 8.0], [14.2, 4.9], [4.9, 14.2]] : [[8.0, 4.9], [4.9, 8.0], [8.0, 11.1], [11.1, 8.0]]) {
         const x = sx * cx, z = sz * cz
         const r = rng()
-        if (r < 0.4) this.tree(x + (rng() - 0.5) * 0.8, z + (rng() - 0.5) * 0.8, 0.8 + rng() * 0.4, rng() > 0.5 ? 'r' : 'p')
-        else if (r < 0.7) bx(s, 0.9, 0.12, 0.35, C.bench, x, 0.45, z)
+        if (r < 0.12) this.tree(x + (rng() - 0.5) * 0.8, z + (rng() - 0.5) * 0.8, 0.8 + rng() * 0.4, rng() > 0.5 ? 'r' : 'p')
+        else if (r < 0.55) bx(s, 0.9, 0.12, 0.35, C.bench, x, 0.45, z)
         else bx(s, 0.5, 0.4, 0.5, C.crate[Math.floor(rng() * 3)], x, 0.1, z)
       }
     }
@@ -535,7 +536,7 @@ export class CityScene {
     }
     // border trees
     const b = E - 1
-    for (const [x, z] of [[-b, 0], [b, 0], [0, -b], [0, b], [-b - 0.2, 6], [b + 0.2, -6]]) this.tree(x, z, 0.8, 'p')
+    for (const [x, z] of [[-b - 0.2, 6], [b + 0.2, -6]]) this.tree(x, z, 0.8, 'p')
     if (T.tree === 'jungle') for (const [x, z] of [[-b, -9], [b, 9], [-9, b], [9, -b], [-b, 11], [11, -b - 0.2], [b, 3], [-3, b]]) this.tree(x, z, 1.1, 'r')
 
     // lots
@@ -832,10 +833,17 @@ export class CityScene {
   }
 
   // ---- accidents: the car behind bumps the one in front, the drivers get out and fight until the county's spending is zero ----
+  // only the county where the most is spent (judged over ten days, see assessSpending) has accidents, and only once there are ten days to judge by
+  crashWeights() {
+    const a = this.assess || { ready: false, top: null }
+    const only = this.odds.map((o, i) => (a.ready && o && this.lots[i].county && this.lots[i].county.id === a.top ? o : null))
+    return accidentWeights(only, this.lots.map((l) => !!l.road))
+  }
+
   maybeCrash(force = false) {
     const cap = this.cars.length >= 8 ? MAX_ACCIDENTS : 1 // a map with few vehicles can only spare one pair
     if (this.crashes.length >= cap || this.cars.length < 4) return false
-    const weights = accidentWeights(this.odds.map((o) => o || null), this.lots.map((l) => !!l.road))
+    const weights = this.crashWeights()
     const danger = weights.reduce((a, b) => a + b, 0)
     if (!force && this.rng() > accidentChance(danger, 1)) return false
     const k = pickLot(weights, this.rng())
@@ -937,7 +945,7 @@ export class CityScene {
     if (this.crashClock >= 0.5) {
       this.crashClock = 0
       if (!this.crashDue) {
-        const danger = accidentWeights(this.odds.map((o) => o || null), this.lots.map((l) => !!l.road)).reduce((a, b) => a + b, 0)
+        const danger = this.crashWeights().reduce((a, b) => a + b, 0)
         if (this.crashes.length < MAX_ACCIDENTS && this.rng() < accidentChance(danger, 0.5)) this.crashDue = true
       }
       if (this.crashDue && this.maybeCrash(true)) this.crashDue = false
@@ -1203,9 +1211,10 @@ export class CityScene {
     if (this.scene.fog) this.scene.fog.color.set(this.dark ? 0x000000 : T.fog[0])
   }
 
-  setCounties(list) {
+  setCounties(list, assess) {
     // list: [{id,name,group,style,color,spent,count,level}]
     this.lastList = list
+    this.assess = assess || { ready: false, top: null }
     const big = list.length > BIG_CITY
     if (big !== this.ring2) { // a 13th county makes the city grow (and it shrinks back if counties are removed)
       this.ring2 = big
@@ -1599,14 +1608,15 @@ export class CityScene {
         u.tail.rotation.y = wag * 0.55
         u.body.rotation.y = -wag * 0.12
         lift = 0.55 + Math.sin(t * 1.4) * 0.09
-      } else if (u.diver) { // a diver swims: arms out in front, a gentle flutter kick, leaning forward, floating
-        const kick = Math.sin(t * (4 + k * 3))
-        u.legs[0].rotation.x = kick * 0.5
-        u.legs[1].rotation.x = -kick * 0.5
-        u.arms[0].rotation.x = -1.3 + Math.sin(t * 2) * 0.15
-        u.arms[1].rotation.x = -1.3 - Math.sin(t * 2) * 0.15
-        w.p.rotation.x = 0.35
-        lift = 0.3 + Math.sin(t * 1.2) * 0.07
+      } else if (u.diver) { // a diver really swims: lying flat, face down, arms stretched out in front, flippers kicking, drifting up and down
+        const kick = Math.sin(t * (6 + k * 3))
+        u.legs[0].rotation.x = kick * 0.45
+        u.legs[1].rotation.x = -kick * 0.45
+        u.arms[0].rotation.x = 3.0 + Math.sin(t * 2.2) * 0.35 // arms reach forward past the head and paddle gently
+        u.arms[1].rotation.x = 3.0 - Math.sin(t * 2.2) * 0.35
+        w.p.rotation.x = 1.4 + Math.sin(t * 1.3) * 0.1 // nearly horizontal, the body undulates a little
+        w.p.rotation.z = Math.sin(t * 2.2) * 0.12 // and rolls from side to side with the strokes
+        lift = 0.75 + Math.sin(t * 1.1) * 0.18 // floating in the water, not walking on the ground
       } else {
         u.legs[0].rotation.x = sw * 0.75
         u.legs[1].rotation.x = -sw * 0.75

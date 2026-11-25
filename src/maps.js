@@ -170,19 +170,6 @@ export function makeMaps(h) {
     g.userData = { y: 1.3, bob: 0.16 }
     return g
   }
-  const fish = (c, s = 1) => {
-    const g = G()
-    const b = mk(g, new THREE.SphereGeometry(0.42, 12, 8), c, 0, 0, 0)
-    b.scale.set(1.5, 0.9, 0.5)
-    const tail = mk(g, new THREE.ConeGeometry(0.34, 0.5, 4), shade(c, -0.1), -0.8, 0, 0)
-    tail.rotation.z = -Math.PI / 2
-    tail.scale.z = 0.3
-    mk(g, new THREE.SphereGeometry(0.06, 6, 5), 0x111111, 0.42, 0.1, 0.17, false)
-    mk(g, new THREE.SphereGeometry(0.06, 6, 5), 0x111111, 0.42, 0.1, -0.17, false)
-    g.scale.setScalar(s)
-    g.userData = { y: 0.9 + s * 0.5, bob: 0.2 }
-    return g
-  }
   const ball = () => {
     const g = G()
     const m = mk(g, new THREE.SphereGeometry(0.45, 16, 12), 0xe8742a, 0, 0, 0)
@@ -285,7 +272,7 @@ export function makeMaps(h) {
     ice: () => [mammoth(), mammoth(0x8d6e4a, 0.8), mammoth(0x6b4a2b, 1.1), saber(), saber(), sled(), sled(), mammoth(0x9a7b55, 0.6)],
     wire: () => vehicles.city(),
     war: () => [buggy(0xc9a24b), buggy(0x8a8f7a), uaz(0x5d6b3a), uaz(0x7a6a4a), armored(), bike(), bike(), makeTruck(0x5d6b3a), uaz(0x3f4a2a)],
-    ocean: () => [sub(0xf4c430), sub(0xff6b6b), fish(0xff8c42), fish(0x4dd0e1, 0.8), fish(0xf72585, 0.7), fish(0xffd166, 0.9), fish(0x7b8794, 1.5), fish(0x9b5de5, 0.8)],
+    ocean: () => [0xf4c430, 0xff6b6b, 0x4dd0e1, 0x80ed99, 0xc77dff, 0xff8c42, 0xffffff, 0x3a86ff].map((c) => sub(c)), // only submarines
     court: () => [ball(), ball(), ball(), makeBus(0xc0392b), makeBus(0x1d3f8a), makeCar(0xffffff), ball()],
   }
 

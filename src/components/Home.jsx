@@ -4,6 +4,7 @@ import Icon from './Icon.jsx'
 import { countyIcon } from './Editors.jsx'
 import { setState } from '../store.js'
 import { fmt, fmtNum, symbolOf, ymOf, levelFor, monthSpending } from '../util.js'
+import { assessSpending } from '../cityRules.js'
 import { useCountUp, useDark } from '../hooks.js'
 import { haptic } from '../haptics.js'
 import { MAP_LIST } from '../maps.js'
@@ -57,7 +58,9 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
     return () => { sc.dispose(); scene.current = null }
   }, [])
 
-  useEffect(() => { scene.current?.setCounties(list) }, [list])
+  // where the money goes, judged over ten days: the only county where accidents and fights may happen
+  const assess = useMemo(() => assessSpending(s.expenses, s.counties, cur), [s.expenses, s.counties, cur])
+  useEffect(() => { scene.current?.setCounties(list, assess) }, [list, assess])
   useEffect(() => { scene.current?.setMap(s.map) }, [s.map])
   useEffect(() => { scene.current?.setDark(dark) }, [dark])
   useEffect(() => { scene.current?.select(sel) }, [sel])

@@ -3,12 +3,12 @@
 
 // ---------- trees ----------
 
-export const TREES_PER_LOT = 6
+export const TREES_PER_LOT = 3 // few: the homepage must not be all green
 
 // where each tree of a county stands. only on the outer side of its plot (away from the roads), and never closer than ROAD_CLEAR to the
 // middle of either road, so a tree can never be over the pavement where people walk or swim.
 export const ROAD_CLEAR = 3.9
-const TREE_OFFSETS = [[-1.3, 2.1], [0, 2.1], [1.3, 2.1], [2.1, -1.3], [2.1, 0], [2.1, 1.3]] // seen from the plot's middle, pointing away from the crossroad
+const TREE_OFFSETS = [[0, 2.1], [2.1, 0], [1.5, 1.7], [-1.3, 2.1], [2.1, -1.3], [1.3, 2.1]] // seen from the plot's middle, pointing away from the crossroad
 export function treeSpot(lotX, lotZ, k) {
   const [a, b] = TREE_OFFSETS[k % TREE_OFFSETS.length]
   const sx = lotX < 0 ? -1 : 1, sz = lotZ < 0 ? -1 : 1
@@ -87,3 +87,29 @@ export const floorTime = (bricks = BRICKS_PER_FLOOR) => (bricks - 1) * BRICK_EVE
 
 // how tall the building is while the crew builds: it starts at what stood before and gains an equal step with every brick that lands
 export const heightWhileBuilding = (before, after, landed, bricks = BRICKS_PER_FLOOR) => before + (after - before) * (Math.min(Math.max(landed, 0), bricks) / bricks)
+
+// ---------- where the fights are allowed ----------
+
+export const ASSESS_DAYS = 10
+
+// the system needs ten days to understand where the money goes. until the history reaches back that far, nothing is decided (ready: false).
+// after that, the one county (not Gulliver) with the most spending in the last ten days is the only one where accidents and fights happen.
+export function assessSpending(expenses, counties, currency, now = Date.now()) {
+  const day = 864e5
+  let first = Infinity
+  for (const e of expenses) if (e.currency === currency && Number.isFinite(e.ts) && e.ts < first) first = e.ts
+  if (first === Infinity || now - first < ASSESS_DAYS * day) return { ready: false, top: null }
+  const spent = new Map()
+  for (const e of expenses) {
+    if (e.currency !== currency || !Number.isFinite(e.ts) || e.ts < now - ASSESS_DAYS * day || e.ts > now + day) continue
+    spent.set(e.countyId, (spent.get(e.countyId) || 0) + e.amount)
+  }
+  let top = null
+  let best = 0
+  for (const c of counties) { // in county order, so a tie goes to the earlier county
+    if (c.group === 'Gulliver') continue
+    const v = spent.get(c.id) || 0
+    if (v > best) { best = v; top = c.id }
+  }
+  return { ready: true, top }
+}

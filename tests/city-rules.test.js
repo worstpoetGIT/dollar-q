@@ -29,7 +29,7 @@ describe('trees around a county', () => {
   })
 
   it('shrinking a county (a new month, expenses deleted) plants the trees again', () => {
-    expect(treesLeft(3)).toBeGreaterThan(treesLeft(9))
+    expect(treesLeft(1)).toBeGreaterThan(treesLeft(9))
     expect(treesLeft(0)).toBe(TREES_PER_LOT)
   })
 
@@ -179,5 +179,47 @@ describe('the building crew', () => {
     expect(floorTime()).toBeCloseTo((BRICKS_PER_FLOOR - 1) * BRICK_EVERY + BRICK_FLIGHT + PAINT_TIME, 10)
     expect(floorTime()).toBeGreaterThan(2.5)
     expect(floorTime()).toBeLessThan(6)
+  })
+})
+
+
+import { assessSpending, ASSESS_DAYS } from '../src/cityRules.js'
+
+describe('where the fights are allowed (ten days to understand where the money goes)', () => {
+  const DAY = 864e5
+  const now = new Date(2026, 10, 25, 12).getTime()
+  const counties = [{ id: 'misc', group: 'Other' }, { id: 'food', group: 'Food' }, { id: 'rent', group: 'Gulliver' }]
+  const e = (countyId, amount, daysAgo, currency = 'EUR') => ({ countyId, amount, currency, ts: now - daysAgo * DAY })
+
+  it('decides nothing until the history reaches back ten days', () => {
+    expect(ASSESS_DAYS).toBe(10)
+    expect(assessSpending([], counties, 'EUR', now)).toEqual({ ready: false, top: null })
+    expect(assessSpending([e('misc', 500, 2), e('food', 10, 1)], counties, 'EUR', now)).toEqual({ ready: false, top: null })
+    expect(assessSpending([e('misc', 500, 9.9)], counties, 'EUR', now).ready).toBe(false)
+  })
+
+  it('after ten days the county with the most spending in the last ten days is the one', () => {
+    const r = assessSpending([e('food', 5, 12), e('misc', 300, 3), e('food', 120, 2), e('misc', 40, 1)], counties, 'EUR', now)
+    expect(r).toEqual({ ready: true, top: 'misc' })
+  })
+
+  it('old spending does not count: only the last ten days decide', () => {
+    const r = assessSpending([e('misc', 9000, 40), e('food', 10, 11), e('food', 25, 2), e('misc', 5, 1)], counties, 'EUR', now)
+    expect(r.top).toBe('food')
+  })
+
+  it('Gulliver (rent, investments, gifts) is never the one, however big', () => {
+    const r = assessSpending([e('misc', 5, 14), e('rent', 9000, 3), e('food', 30, 2)], counties, 'EUR', now)
+    expect(r.top).toBe('food')
+  })
+
+  it('only the chosen currency counts, a tie goes to the earlier county, and nothing spent recently means no county', () => {
+    expect(assessSpending([e('misc', 5, 14), e('food', 900, 2, 'INR')], counties, 'EUR', now).top).toBe(null)
+    expect(assessSpending([e('food', 5, 14), e('misc', 50, 2), e('food', 50, 3)], counties, 'EUR', now).top).toBe('misc')
+    expect(assessSpending([e('food', 5, 14)], counties, 'EUR', now)).toEqual({ ready: true, top: null })
+  })
+
+  it('copes with junk', () => {
+    expect(() => assessSpending([{ countyId: 'x', amount: 5, currency: 'EUR', ts: NaN }, e('misc', 5, 12)], counties, 'EUR', now)).not.toThrow()
   })
 })
