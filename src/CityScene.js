@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
+import { treesLeft, TREES_PER_LOT } from './cityRules.js'
 import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize } from './traffic.js'
 
 // helpers
@@ -285,6 +286,8 @@ const CELLS = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1]] // the first 12 counties
 // counties 13 to 24: the old park corner becomes a lot, and there are two more along the roads. the park moves out to the corner.
 const CELLS_2 = [[11.1, 11.1], [17.3, 4.9], [4.9, 17.3]]
 export const BIG_CITY = 12 // with more counties than this the city grows a second ring
+// where the trees of a county stand, inside its plot (the last ones are cut first)
+const TREE_SLOTS = [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8], [0, -2.1], [0, 2.1], [-2.1, 0], [2.1, 0]]
 const HALF = [15, 22] // from the middle of the city to the edge of the board
 const TAU = Math.PI * 2
 
@@ -295,6 +298,8 @@ export class CityScene {
     this.onSelect = onSelect || (() => {})
     this.onViewChanged = onViewChanged || (() => {})
     this.rng = mulberry(7)
+    this.felling = [] // trees being cut down, with the worker
+    this.growing = [] // trees being planted
     this.ring2 = false // the city grows a second ring when there are more than BIG_CITY counties
     this.E = HALF[0]
     this.lots = []
@@ -519,6 +524,9 @@ export class CityScene {
         this.lots.push({
           i, pos, holder, border, pad, pick, size: LOT_SMALL, county: null, built: null, top: 1.5, pop: 1, target: 0, stepAt: 0, stepEvery: 0.5, crane: null, parts: {}, anims: [], dim: 0, dimTarget: 0, mats: [], bush: null,
         })
+        const placed = this.lots[this.lots.length - 1]
+        placed.trees = Array(TREES_PER_LOT).fill(null)
+        for (let k = 0; k < TREES_PER_LOT; k++) this.plantTree(placed, k, false)
         i++
       }
      }
@@ -667,6 +675,89 @@ export class CityScene {
     g.position.set(x, 0.1, z)
     g.rotation.y = this.rng() * TAU
     this.world.add(g)
+    return g
+  }
+
+  // ---- the trees around a county: workers cut them down as it grows, and they are planted again when it shrinks ----
+  slotAt(lot, k) {
+    const [ox, oz] = TREE_SLOTS[k]
+    return [lot.pos.x + ox, lot.pos.z + oz]
+  }
+
+  plantTree(lot, k, animate) {
+    const [x, z] = this.slotAt(lot, k)
+    const g = this.tree(x, z, 0.7 + (k % 3) * 0.06, k % 2 ? 'p' : 'r')
+    lot.trees[k] = g
+    if (animate) { g.scale.setScalar(0.01); this.growing.push({ g, t: 0 }) }
+  }
+
+  cutTree(lot, k, animate) {
+    const g = lot.trees[k]
+    lot.trees[k] = null
+    if (!g) return
+    if (!animate || this.felling.length >= 3) { this.disposePart(g); return } // never more than three workers at once
+    const [x, z] = this.slotAt(lot, k)
+    // the worker stands between the tree and the middle of the lot, and the tree falls away from him
+    const dx = lot.pos.x - x, dz = lot.pos.z - z
+    const len = Math.hypot(dx, dz) || 1
+    const dir = new THREE.Vector3(dx / len, 0, dz / len)
+    const pivot = new THREE.Group()
+    pivot.position.set(x, 0.1, z)
+    this.world.add(pivot)
+    g.position.set(0, 0, 0)
+    pivot.add(g)
+    const worker = makePerson(this.rng)
+    worker.position.set(x + dir.x * 0.85, 0.1, z + dir.z * 0.85)
+    worker.rotation.y = Math.atan2(-dir.x, -dir.z) // facing the tree
+    const axe = new THREE.Group()
+    bx(axe, 0.04, 0.5, 0.04, 0x8b5a2b, 0, -0.45, 0.14)
+    bx(axe, 0.16, 0.1, 0.03, 0xbfc7d1, 0.07, -0.66, 0.14)
+    worker.userData.arms[1].add(axe)
+    this.world.add(worker)
+    const axis = new THREE.Vector3(-dir.z, 0, dir.x).normalize() // tilts the top of the tree away from the worker
+    this.felling.push({ pivot, g, worker, axis, t: 0 })
+  }
+
+  // make the trees around a lot match what its level leaves standing
+  setTrees(lot, want, animate) {
+    let up = lot.trees.filter(Boolean).length
+    for (let k = TREES_PER_LOT - 1; k >= 0 && up > want; k--) if (lot.trees[k]) { this.cutTree(lot, k, animate); up-- }
+    for (let k = 0; k < TREES_PER_LOT && up < want; k++) if (!lot.trees[k]) { this.plantTree(lot, k, animate); up++ }
+  }
+
+  updateTrees(dt) {
+    for (let i = this.growing.length - 1; i >= 0; i--) {
+      const e = this.growing[i]
+      e.t += dt / 1.2
+      e.g.scale.setScalar(Math.min(1, 0.01 + e.t))
+      if (e.t >= 1) this.growing.splice(i, 1)
+    }
+    for (let i = this.felling.length - 1; i >= 0; i--) {
+      const f = this.felling[i]
+      f.t += dt
+      const t = f.t
+      const swing = Math.sin(t * 10) * 0.55
+      const u = f.worker.userData
+      // 0 to 1.4 s: he chops (the tree shivers), then it falls (1 s), then it sinks away and he leaves
+      if (t < 1.4) {
+        f.pivot.quaternion.setFromAxisAngle(f.axis, Math.sin(t * 24) * 0.02)
+        u.arms[1].rotation.x = -1.1 + swing
+        u.arms[0].rotation.x = -0.4
+      } else if (t < 2.4) {
+        const k = (t - 1.4)
+        f.pivot.quaternion.setFromAxisAngle(f.axis, 1.5 * k * k)
+        u.arms[1].rotation.x = -0.3
+      } else if (t < 3.2) {
+        const k = 1 - (t - 2.4) / 0.8
+        f.pivot.quaternion.setFromAxisAngle(f.axis, 1.5)
+        f.g.scale.setScalar(Math.max(0.001, k))
+        f.worker.scale.setScalar(1.05 * Math.max(0.001, k))
+      } else {
+        this.disposePart(f.worker)
+        this.disposePart(f.pivot)
+        this.felling.splice(i, 1)
+      }
+    }
   }
 
   buildWalkers() {
@@ -761,6 +852,8 @@ export class CityScene {
     this.walkers = []
     this.cars = []
     this.spinners = []
+    this.felling = []
+    this.growing = []
     this.E = HALF[this.ring2 ? 1 : 0]
     this.traffic = makeTraffic(this.E - 15)
     this.rng = mulberry(7)
@@ -969,6 +1062,7 @@ export class CityScene {
     lot.built = { key: c ? c.style + '|' + c.color + '|' + L : 'none', look: c ? c.style + '|' + c.color : 'none', L }
     if (lot.dim < 0) lot.dim = 0
     if (!animate) { lot.size = stageSize(lot); this.sizeLot(lot) }
+    this.setTrees(lot, treesLeft(L), !!animate) // a new floor costs a tree or two
   }
 
   // a lot's outline, pad and everything on it are smaller while the county has little spending, which leaves the footpath beside it roomier
@@ -1136,6 +1230,7 @@ export class CityScene {
     // lots: pop / dim / label
     const camDist = this.camera.position.distanceTo(this.controls.target)
     if (this.scene.fog) { this.scene.fog.near = camDist - 14 * (this.E / 15); this.scene.fog.far = camDist + 70 * (this.E / 15) }
+    this.updateTrees(dt)
     for (const lot of this.lots) {
       // one step at a time until it reaches the target level
       const want = stageSize(lot)
