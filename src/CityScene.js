@@ -1214,7 +1214,7 @@ export class CityScene {
   setCounties(list, assess) {
     // list: [{id,name,group,style,color,spent,count,level}]
     this.lastList = list
-    this.assess = assess || { ready: false, top: null }
+    if (assess) this.assess = assess // (a rebuild of the map re-applies the list without it: keep what we had)
     const big = list.length > BIG_CITY
     if (big !== this.ring2) { // a 13th county makes the city grow (and it shrinks back if counties are removed)
       this.ring2 = big
