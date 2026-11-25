@@ -954,6 +954,8 @@ export class CityScene {
         this.crashes.splice(i, 1)
       }
     }
+    // the fighters are in the way of anybody walking on that footpath
+    this.traffic.blockers = this.crashes.flatMap((a) => (a.fighters || []).map((f) => ({ active: true, road: a.axis + Math.sign(f.lat), t: f.along, lat: f.lat, goal: f.lat, hw: 0.3, hl: 0.32, dir: 0, speed: 0 })))
     this.crashClock += dt
     if (this.crashClock >= 0.5) {
       this.crashClock = 0
@@ -1639,13 +1641,12 @@ export class CityScene {
         lift += Math.abs(Math.cos(w.ph)) * 0.045 * k
       }
       const bob = lift - 0.1
-      if (w.axis === 'x') {
-        w.p.position.set(w.t, 0.1 + bob, w.lat)
-        w.p.rotation.y = w.dir > 0 ? Math.PI / 2 : -Math.PI / 2
-      } else {
-        w.p.position.set(w.lat, 0.1 + bob, w.t)
-        w.p.rotation.y = w.dir > 0 ? 0 : Math.PI
-      }
+      const heading = w.axis === 'x' ? (w.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (w.dir > 0 ? 0 : Math.PI) // the way they walk
+      if (w.face === undefined) w.face = heading
+      const turn = Math.atan2(Math.sin(heading - w.face), Math.cos(heading - w.face)) // the short way round
+      w.face += Math.max(-dt * 8, Math.min(dt * 8, turn)) // they swing round when they turn back, not flip
+      w.p.position.set(w.axis === 'x' ? w.t : w.lat, 0.1 + bob, w.axis === 'x' ? w.lat : w.t)
+      w.p.rotation.y = w.face
     }
     // vehicles come in one end and leave at the other
     this.spawnIn -= dt

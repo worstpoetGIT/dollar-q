@@ -458,3 +458,25 @@ describe('traffic: turning at the crossroad', () => {
     }
   })
 })
+
+describe('traffic: people and somebody standing in the way', () => {
+  it('walkers stop in front of a fighter on the footpath, turn round and never touch', () => {
+    const rng = seeded(3)
+    const walkers = placeWalkers(8, rng)
+    const tr = makeTraffic()
+    // two drivers fighting on the +side footpath of the x road, a bit out from the crossroad
+    const fighter = (t) => ({ active: true, road: 'x1', t, lat: 1.55, goal: 1.55, hw: 0.3, hl: 0.32, dir: 0, speed: 0 })
+    tr.blockers = [fighter(8), fighter(8.6)]
+    let touched = 0, turned = 0
+    const was = walkers.map((w) => w.dir)
+    for (let step = 0; step < 90 * 30; step++) {
+      stepTraffic([], walkers, tr, 1 / 30)
+      walkers.forEach((w, i) => {
+        if (w.dir !== was[i]) { was[i] = w.dir; if (w.road === 'x1') turned++ }
+        if (w.road === 'x1') for (const b of tr.blockers) if (Math.abs(w.t - b.t) < w.hl + b.hl && Math.abs(w.lat - b.lat) < w.hw + b.hw) touched++
+      })
+    }
+    expect(touched).toBe(0)
+    expect(turned).toBeGreaterThan(0)
+  })
+})

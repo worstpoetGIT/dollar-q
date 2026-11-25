@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import 'lenis/dist/lenis.css'
 import Splash from './components/Splash.jsx'
 import Icon from './components/Icon.jsx'
+import Toast from './components/Toast.jsx'
 import Home from './components/Home.jsx'
 import Analytics from './components/Analytics.jsx'
 import History from './components/History.jsx'
@@ -77,7 +78,6 @@ export default function App() {
       setSaved({ n: Date.now(), countyId: e.countyId, amount: e.amount, currency: e.currency })
       setTab('home')
     }
-    setTimeout(() => setToast(null), 3100)
   }, [s.counties])
 
   const go = (t) => { setSub(null); setTab(t) }
@@ -109,12 +109,7 @@ export default function App() {
           {screen === 'wizard' && <Wizard s={s} onBack={() => setEditName(true)} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
         </>
       )}
-      {toast && (
-        <div className="toast" key={toast.n}>
-          <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--green)', display: 'grid', placeItems: 'center', flex: 'none' }}><Icon name="check" size={16} color="#fff" sw={3} /></span>
-          <div><div style={{ fontSize: 14.4, opacity: 0.7 }}>{toast.sub}</div><b>{toast.text}</b></div>
-        </div>
-      )}
+      {toast && <Toast key={toast.n} toast={toast} onGone={() => setToast((x) => (x && x.n === toast.n ? null : x))} />}
       {screen === 'email' && <SignIn onSkip={skipSignIn} />}
       {splash && <Splash onDone={() => setSplash(false)} />}
     </div>

@@ -94,7 +94,7 @@ const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in
 // the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
 export function makeTraffic(extra = 0) {
   reach = extra
-  return { sig: { phase: 'x', axis: 'x', left: 0, mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [] }
+  return { sig: { phase: 'x', axis: 'x', left: 0, mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [], blockers: [] }
 }
 
 // ---------- shared by cars and people ----------
@@ -545,6 +545,11 @@ function stepWalker(w, walkers, cars, tr, dt) {
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far + reach && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
   lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig, cars))
+  // somebody standing in my way (the drivers of a bump fighting on the footpath): i stop in front of them, and after a moment i turn round and go the other way
+  const stop = tr.blockers.length ? followLimit(w, tr.blockers, WALK) : Infinity
+  lim = Math.min(lim, stop)
+  w.blocked = stop < 0.05 ? (w.blocked || 0) + dt : 0
+  if (w.blocked > 1.5) { w.blocked = 0; turnAround(w, tr.lots); return }
   for (const c of cars) { // a car on my crossing (or sweeping round a curve): i hold still if it is about to reach me
     if (!c.active) continue
     const room = c.arc ? 0.1 : 0 // a curve sweeps wide so it gets a margin, a car just standing there does not (people walk right past it on the pavement)
