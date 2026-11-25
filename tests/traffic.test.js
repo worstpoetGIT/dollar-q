@@ -28,14 +28,16 @@ const box = (m) => {
 const hit = (a, b) => a.x[0] < b.x[1] && b.x[0] < a.x[1] && a.z[0] < b.z[1] && b.z[0] < a.z[1]
 
 // the eight lots that touch a footpath, with a size each (1 = fully grown, LOT_SMALL = first stage)
-const lotsOf = (size) => [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1], [-4.9, 4.9], [-11.1, 4.9], [-4.9, 11.1], [4.9, -4.9], [11.1, -4.9], [4.9, -11.1], [-4.9, -4.9], [-11.1, -4.9], [-4.9, -11.1]].map(([x, z]) => ({ x, z, size: size(x, z) }))
+// the 12 more lots of the big city (24 counties): the old park corner and two more along the roads, in every corner
+const BIG = [[1, 1], [1, -1], [-1, 1], [-1, -1]].flatMap(([a, b]) => [[11.1 * a, 11.1 * b], [17.3 * a, 4.9 * b], [4.9 * a, 17.3 * b]])
+const lotsOf = (size, big = false) => [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1], [-4.9, 4.9], [-11.1, 4.9], [-4.9, 11.1], [4.9, -4.9], [11.1, -4.9], [4.9, -11.1], [-4.9, -4.9], [-11.1, -4.9], [-4.9, -11.1], ...(big ? BIG : [])].map(([x, z]) => ({ x, z, size: size(x, z) }))
 
-function simulate(name, seed, minutes, dt, lotSize) {
+function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
   const rng = seeded(seed)
   const cars = fleet(name)
-  const walkers = placeWalkers(8, rng)
-  const tr = makeTraffic()
-  if (lotSize) tr.lots = lotsOf(lotSize)
+  const walkers = placeWalkers(extra > 0 ? 12 : 8, rng)
+  const tr = makeTraffic(extra)
+  if (lotSize) tr.lots = lotsOf(lotSize, extra > 0)
   for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
   const out = { settledGap: 9, minGap: 9, outsideLine: 0, offPavement: 0, crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0, standing: 0, carsWaiting: 0, carTime: 0 }
   const still = walkers.map(() => 0)
@@ -50,7 +52,7 @@ function simulate(name, seed, minutes, dt, lotSize) {
     for (const w of walkers) if (Math.abs(w.lat) - w.hw < 1.43 || Math.abs(w.lat) + w.hw > 2.45) out.offPavement++
     for (const w of walkers) { // the lot line beside this person: the biggest lot they are beside decides
       // the lot line beside this person: the biggest lot they are beside decides (no lots at all: as for a fully grown lot)
-      const beside = !lotSize ? [] : lotsOf(lotSize).filter((l) => Math.sign(w.axis === 'x' ? l.z : l.x) === w.side && Math.abs(w.t - (w.axis === 'x' ? l.x : l.z)) < LOT_HALF * l.size + 0.3 && Math.abs(Math.abs(w.axis === 'x' ? l.z : l.x) - 4.9) < 0.5)
+      const beside = !lotSize ? [] : lotsOf(lotSize, extra > 0).filter((l) => Math.sign(w.axis === 'x' ? l.z : l.x) === w.side && Math.abs(w.t - (w.axis === 'x' ? l.x : l.z)) < LOT_HALF * l.size + 0.3 && Math.abs(Math.abs(w.axis === 'x' ? l.z : l.x) - 4.9) < 0.5)
       const edge = !lotSize ? 4.9 - LOT_HALF : 4.9 - LOT_HALF * (beside.length ? Math.max(...beside.map((l) => l.size)) : LOT_SMALL)
       if (Math.abs(w.lat) + w.hw > edge + 0.01) out.outsideLine++
     }
@@ -195,6 +197,33 @@ describe('traffic: the footpath gets thinner the more is spent', () => {
       expect(r.outsideLine).toBe(0)
       expect(r.minGap).toBeGreaterThan(0.04)
     }
+  }, 120000)
+})
+
+describe('traffic: the big city (24 counties, longer roads)', () => {
+  it('the second ring has 12 more lots, none on top of another and none on the roads', () => {
+    expect(BIG.length).toBe(12)
+    const all = lotsOf(() => 1, true)
+    expect(all.length).toBe(24)
+    for (const a of all) {
+      expect(Math.abs(a.x) > 2.45 + 0.3 && Math.abs(a.z) > 2.45 + 0.3).toBe(true) // clear of the roads
+      for (const b of all) if (a !== b) expect(Math.abs(a.x - b.x) >= 4.9 || Math.abs(a.z - b.z) >= 4.9).toBe(true)
+    }
+  })
+
+  it('cars and people use the whole longer road, and nothing touches, stands on a line or leaves the pavement', () => {
+    for (const size of [() => lotSize(0), () => lotSize(10), () => 1]) {
+      for (const seed of [1, 2]) {
+        const r = simulate('city', seed, 4, 1 / 30, size, 7)
+        expect(r.crashes).toEqual([])
+        expect(r.outsideLine).toBe(0)
+        expect(r.minGap).toBeGreaterThan(0.04)
+      }
+    }
+  }, 240000)
+
+  it('with no lots at all, nobody leaves the pavement on the long roads either', () => {
+    for (const seed of [1, 2]) expect(simulate('city', seed, 4, 1 / 30, null, 7).offPavement).toBe(0)
   }, 120000)
 })
 

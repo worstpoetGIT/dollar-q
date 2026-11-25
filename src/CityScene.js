@@ -281,8 +281,11 @@ const M = (c) => (typeof c === 'number' ? L(c) : c)
 const MAP_SKY = Object.fromEntries(MAP_LIST.map((m) => [m.id, m.hud === 'light' ? [m.sky[0], m.sky[1], m.sky[1]] : m.sky]))
 
 const LOT_Q = [[1, -1], [1, 1], [-1, 1], [-1, -1]]
-const CELLS = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1]]
-const DECOR = [11.1, 11.1]
+const CELLS = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1]] // the first 12 counties
+// counties 13 to 24: the old park corner becomes a lot, and there are two more along the roads. the park moves out to the corner.
+const CELLS_2 = [[11.1, 11.1], [17.3, 4.9], [4.9, 17.3]]
+export const BIG_CITY = 12 // with more counties than this the city grows a second ring
+const HALF = [15, 22] // from the middle of the city to the edge of the board
 const TAU = Math.PI * 2
 
 // scene
@@ -292,6 +295,8 @@ export class CityScene {
     this.onSelect = onSelect || (() => {})
     this.onViewChanged = onViewChanged || (() => {})
     this.rng = mulberry(7)
+    this.ring2 = false // the city grows a second ring when there are more than BIG_CITY counties
+    this.E = HALF[0]
     this.lots = []
     this.walkers = []
     this.cars = []
@@ -359,12 +364,13 @@ export class CityScene {
     const rng = this.rng
     const T = this.T, C = T.c
     // board
-    bx(s, 30, 0.9, 30, C.base, 0, -1.4, 0)
-    bx(s, 30.2, 0.12, 30.2, C.base2, 0, -1.55, 0)
-    const g = mk(s, new THREE.BoxGeometry(30, 0.5, 30), m.grass, 0, -0.25, 0)
+    const E = this.E // half the width of the board
+    bx(s, 2 * E, 0.9, 2 * E, C.base, 0, -1.4, 0)
+    bx(s, 2 * E + 0.2, 0.12, 2 * E + 0.2, C.base2, 0, -1.55, 0)
+    const g = mk(s, new THREE.BoxGeometry(2 * E, 0.5, 2 * E), m.grass, 0, -0.25, 0)
     g.castShadow = false
     // roads
-    for (const [w, d] of [[30, 3], [3, 30]]) {
+    for (const [w, d] of [[2 * E, 3], [3, 2 * E]]) {
       const r = mk(s, new THREE.BoxGeometry(w, 0.06, d), C.road, 0, 0.03, 0, false)
       if (w === 3) r.position.y = 0.035
     }
@@ -372,14 +378,16 @@ export class CityScene {
     const pave = shade(C.pad, -0.14)
     for (const sg of [-1, 1]) {
       for (const hf of [-1, 1]) {
-        const mid = hf * (1.5 + 13.5 / 2)
-        mk(s, new THREE.BoxGeometry(13.5, 0.05, 0.92), pave, mid, 0.1, sg * 1.96, false)
-        mk(s, new THREE.BoxGeometry(0.92, 0.05, 13.5), pave, sg * 1.96, 0.102, mid, false)
+        const len = E - 1.5 // the pavement runs from the crossroad to the end of the board
+        const mid = hf * (1.5 + len / 2)
+        mk(s, new THREE.BoxGeometry(len, 0.05, 0.92), pave, mid, 0.1, sg * 1.96, false)
+        mk(s, new THREE.BoxGeometry(0.92, 0.05, len), pave, sg * 1.96, 0.102, mid, false)
       }
     }
     if (T.dashes) {
       const dash = M(C.dash), cross = M(C.cross)
-      for (let i = -13; i <= 13; i += 2) {
+      const dm = Math.floor((E - 2) / 2) * 2 + 1
+      for (let i = -dm; i <= dm; i += 2) {
         if (Math.abs(i) < 2.2) continue
         bx(s, 1.0, 0.02, 0.12, dash, i, 0.07, 0)
         bx(s, 0.12, 0.02, 1.0, dash, 0, 0.075, i)
@@ -397,23 +405,26 @@ export class CityScene {
     }
     // slabs
     for (const [sx, sz] of LOT_Q) {
-      const p = mk(s, new THREE.BoxGeometry(12.8, 0.1, 12.8), m.pad, sx * 8, 0.05, sz * 8, false)
+      const side = E - 2.2 // 12.8 in the small city
+      const mid = 1.6 + side / 2
+      const p = mk(s, new THREE.BoxGeometry(side, 0.1, side), m.pad, sx * mid, 0.05, sz * mid, false)
       p.receiveShadow = true
     }
     if (T.wire) {
-      const grid = new THREE.GridHelper(30, 30, C.road, C.pad)
+      const grid = new THREE.GridHelper(2 * E, 2 * E, C.road, C.pad)
       grid.position.y = 0.02
       s.add(grid)
     }
     if (T.zone) {
-      const zone = mk(s, new THREE.RingGeometry(13.2, 13.5, 64), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }), 0, 0.3, 0, false)
+      const zone = mk(s, new THREE.RingGeometry(E - 1.8, E - 1.5, 64), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }), 0, 0.3, 0, false)
       zone.rotation.x = -Math.PI / 2
-      const wallz = mk(s, new THREE.CylinderGeometry(13.35, 13.35, 3, 64, 1, true), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.12, depthWrite: false }), 0, 1.8, 0, false)
+      const wallz = mk(s, new THREE.CylinderGeometry(E - 1.65, E - 1.65, 3, 64, 1, true), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.12, depthWrite: false }), 0, 1.8, 0, false)
       wallz.renderOrder = 2
     }
     if (T.studs) {
       const pts = []
-      for (let x = -14; x <= 14; x++) for (let z = -14; z <= 14; z++) if (Math.abs(x) > 1.7 && Math.abs(z) > 1.7) pts.push([x, z])
+      const sm = Math.floor(E - 1)
+      for (let x = -sm; x <= sm; x++) for (let z = -sm; z <= sm; z++) if (Math.abs(x) > 1.7 && Math.abs(z) > 1.7) pts.push([x, z])
       const im = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 10), L(shade(new THREE.Color(m.pad.color).getHex(), -0.05)), pts.length)
       const mat = new THREE.Matrix4()
       pts.forEach(([x, z], k) => { mat.makeTranslation(x, 0.135, z); im.setMatrixAt(k, mat) })
@@ -421,7 +432,7 @@ export class CityScene {
       s.add(im)
     }
     // lamps
-    for (const i of [-12, -6, 6, 12]) {
+    for (const i of this.ring2 ? [-18, -12, -6, 6, 12, 18] : [-12, -6, 6, 12]) {
       for (const sg of [-1, 1]) {
         this.lamp(i, sg * 1.62)
         this.lamp(sg * 1.62, i)
@@ -429,7 +440,7 @@ export class CityScene {
     }
     this.buildSignals()
     // decor cells
-    const [dx, dz] = DECOR
+    const [dx, dz] = this.ring2 ? [17.3, 17.3] : [11.1, 11.1] // the park, court, fountain and grove corners
     const cells = [[-dx, -dz], [dx, -dz], [-dx, dz], [dx, dz]]
     const defaults = [
       (x, z) => { // park with pond
@@ -463,7 +474,7 @@ export class CityScene {
     })
     // scattered gap decor
     for (const [sx, sz] of LOT_Q) {
-      for (const [cx, cz] of [[8.0, 4.9], [4.9, 8.0], [8.0, 11.1], [11.1, 8.0]]) {
+      for (const [cx, cz] of this.ring2 ? [[8.0, 4.9], [4.9, 8.0], [8.0, 11.1], [11.1, 8.0], [14.2, 4.9], [4.9, 14.2]] : [[8.0, 4.9], [4.9, 8.0], [8.0, 11.1], [11.1, 8.0]]) {
         const x = sx * cx, z = sz * cz
         const r = rng()
         if (r < 0.4) this.tree(x + (rng() - 0.5) * 0.8, z + (rng() - 0.5) * 0.8, 0.8 + rng() * 0.4, rng() > 0.5 ? 'r' : 'p')
@@ -471,16 +482,28 @@ export class CityScene {
         else bx(s, 0.5, 0.4, 0.5, C.crate[Math.floor(rng() * 3)], x, 0.1, z)
       }
     }
+    // the big city has two free cells in each corner next to the park: small groves
+    if (this.ring2) {
+      for (const [sx, sz] of LOT_Q) {
+        for (const [cx, cz] of [[17.3, 11.1], [11.1, 17.3]]) {
+          const x = sx * cx, z = sz * cz
+          bx(s, 4.6, 0.12, 4.6, C.grove, x, 0.1, z)
+          for (const [ox, oz, sc, t] of [[-1.2, -1.1, 1.1, 'p'], [1.1, -1.2, 1, 'r'], [-1, 1.2, 1, 'r'], [1.2, 1.1, 1.2, 'p']]) this.tree(x + ox, z + oz, sc, t)
+        }
+      }
+    }
     // border trees
-    for (const [x, z] of [[-14, 0], [14, 0], [0, -14], [0, 14], [-14.2, 6], [14.2, -6]]) this.tree(x, z, 0.8, 'p')
-    if (T.tree === 'jungle') for (const [x, z] of [[-14, -9], [14, 9], [-9, 14], [9, -14], [-14, 11], [11, -14.2], [14, 3], [-3, 14]]) this.tree(x, z, 1.1, 'r')
+    const b = E - 1
+    for (const [x, z] of [[-b, 0], [b, 0], [0, -b], [0, b], [-b - 0.2, 6], [b + 0.2, -6]]) this.tree(x, z, 0.8, 'p')
+    if (T.tree === 'jungle') for (const [x, z] of [[-b, -9], [b, 9], [-9, b], [9, -b], [-b, 11], [11, -b - 0.2], [b, 3], [-3, b]]) this.tree(x, z, 1.1, 'r')
 
     // lots
     this.pickGroup = new THREE.Group()
     s.add(this.pickGroup)
     let i = 0
-    for (const [sx, sz] of LOT_Q) {
-      for (const [cx, cz] of CELLS) {
+    for (const cells of this.ring2 ? [CELLS, CELLS_2] : [CELLS]) {
+     for (const [sx, sz] of LOT_Q) {
+      for (const [cx, cz] of cells) {
         const pos = new THREE.Vector3(sx * cx, 0, sz * cz)
         const holder = new THREE.Group()
         holder.position.copy(pos)
@@ -498,6 +521,7 @@ export class CityScene {
         })
         i++
       }
+     }
     }
     this.traffic.lots = this.lots.map((l) => ({ x: l.pos.x, z: l.pos.z, size: l.size })) // the footpaths need to know how big each lot is
     this.lots.forEach((l) => this.sizeLot(l))
@@ -648,7 +672,7 @@ export class CityScene {
   buildWalkers() {
     const rng = this.rng
     const P = this.T.people
-    this.walkers = placeWalkers(8, rng)
+    this.walkers = placeWalkers(this.ring2 ? 12 : 8, rng)
     for (const w of this.walkers) {
       const p = makePerson(rng)
       Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
@@ -715,10 +739,10 @@ export class CityScene {
   }
 
   // public
-  setMap(name) {
+  setMap(name, force = false) {
     if (!MAPS[name]) name = 'city'
     const key = name === 'wire' && !this.dark ? 'wireLight' : name
-    if (this.mapKey === key && this.world) return
+    if (!force && this.mapKey === key && this.world) return
     this.map = name
     this.mapKey = key
     const T = (this.T = MAPS[key])
@@ -737,13 +761,18 @@ export class CityScene {
     this.walkers = []
     this.cars = []
     this.spinners = []
-    this.traffic = makeTraffic()
+    this.E = HALF[this.ring2 ? 1 : 0]
+    this.traffic = makeTraffic(this.E - 15)
     this.rng = mulberry(7)
     const C = T.c
     this.mats = { grass: M(C.grass), pad: M(C.pad), round: M(C.round), pine: M(C.pine), blossom: M(C.blossom), water: M(C.water) }
     this.buildWorld()
     this.buildWalkers()
     this.buildCars()
+    const shadowCam = this.sun.shadow.camera // the shadows have to cover the whole board
+    const grow = this.E / 15
+    shadowCam.left = -24 * grow; shadowCam.right = 24 * grow; shadowCam.top = 24 * grow; shadowCam.bottom = -24 * grow
+    shadowCam.updateProjectionMatrix()
     this.sun.color.set(T.sun[0])
     this.sunI = T.sun[1]
     this.hemi.color.set(T.hemi[0])
@@ -788,6 +817,13 @@ export class CityScene {
   setCounties(list) {
     // list: [{id,name,group,style,color,spent,count,level}]
     this.lastList = list
+    const big = list.length > BIG_CITY
+    if (big !== this.ring2) { // a 13th county makes the city grow (and it shrinks back if counties are removed)
+      this.ring2 = big
+      this.setMap(this.map, true)
+      this.resize(true)
+      return
+    }
     this.lots.forEach((lot, i) => {
       const c = list[i] || null
       lot.county = c
@@ -1026,8 +1062,9 @@ export class CityScene {
     this.renderer.setSize(w, h, true)
     this.camera.aspect = w / h
     const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))
-    const horiz = 20 / (tanV * this.camera.aspect)
-    const vert = 14 / tanV
+    const grow = (this.E || 15) / 15 // the view has to fit a bigger city too
+    const horiz = (20 * grow) / (tanV * this.camera.aspect)
+    const vert = (14 * grow) / tanV
     this.D0 = Math.max(horiz, vert) / 2.2 // default view fills the screen
     this.camera.updateProjectionMatrix()
     if (this.controls) {
@@ -1092,13 +1129,13 @@ export class CityScene {
       if (k >= 1) this.tween = null
     }
     const tg = this.controls.target
-    tg.x = THREE.MathUtils.clamp(tg.x, -13, 13)
-    tg.z = THREE.MathUtils.clamp(tg.z, -13, 13)
+    tg.x = THREE.MathUtils.clamp(tg.x, -(this.E - 2), this.E - 2)
+    tg.z = THREE.MathUtils.clamp(tg.z, -(this.E - 2), this.E - 2)
     this.controls.update()
 
     // lots: pop / dim / label
     const camDist = this.camera.position.distanceTo(this.controls.target)
-    if (this.scene.fog) { this.scene.fog.near = camDist - 14; this.scene.fog.far = camDist + 70 }
+    if (this.scene.fog) { this.scene.fog.near = camDist - 14 * (this.E / 15); this.scene.fog.far = camDist + 70 * (this.E / 15) }
     for (const lot of this.lots) {
       // one step at a time until it reaches the target level
       const want = stageSize(lot)

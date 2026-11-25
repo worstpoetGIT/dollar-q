@@ -34,12 +34,16 @@ export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0,
 })
 
+// how much longer the roads are than in the 12 county city (the city grows a second ring when there are more counties)
+let reach = 0
+
 const GREEN = 5 // seconds a road keeps its green before it has to give way (if somebody is waiting)
 const YELLOW = 2.2 // every green ends with a yellow, cars that can still stop do, the others carry on through
 const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in one go
 
 // the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
-export function makeTraffic() {
+export function makeTraffic(extra = 0) {
+  reach = extra
   return { sig: { axis: 'x', mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [] }
 }
 
@@ -79,7 +83,7 @@ function passPlan(m, movers, cfg) {
   const cover = p(lead) + lead.hl + cfg.clear - start
   const time = cover / (fast - lead.speed) + Math.abs(m.lane - m.alt) / cfg.shift
   const end = p(m) + m.hl + fast * time
-  if (end > cfg.far) return null
+  if (end > cfg.far + reach) return null
 
   const near = m.hw + cfg.side
   for (const o of movers) {
@@ -202,7 +206,7 @@ function stepCar(c, cars, walkers, tr, dt) {
   slide(c, cars, CAR, dt)
   c.t += c.dir * c.speed * dt
   c.still = c.speed < 0.03 ? c.still + dt : 0
-  if (pos(c) - c.hl > CAR.edge || c.still > 25) { c.active = false; c.passing = null }
+  if (pos(c) - c.hl > CAR.edge + reach || c.still > 25) { c.active = false; c.passing = null }
 }
 
 // room for a car at its spot: nobody close in the same lane, nobody overtaking into it
@@ -224,10 +228,10 @@ export function spawnCar(cars, rng, anywhere = false) {
   const axis = rng() > 0.5 ? 'x' : 'z'
   const lane = rng() > 0.5 ? 0.75 : -0.75
   const dir = axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1)
-  let p = -(CAR.edge + c.hl)
+  let p = -(CAR.edge + reach + c.hl)
   if (anywhere) {
-    const before = [-(CAR.far - 1), -(STOP + 0.4 + c.hl)] // between the end of the road and the stop line
-    const after = [BOX + 0.4 + c.hl, CAR.far - 1 - c.hl]
+    const before = [-(CAR.far + reach - 1), -(STOP + 0.4 + c.hl)] // between the end of the road and the stop line
+    const after = [BOX + 0.4 + c.hl, CAR.far + reach - 1 - c.hl]
     const [a, b] = rng() > 0.5 ? before : after
     if (b <= a) return null
     p = a + rng() * (b - a)
@@ -275,7 +279,7 @@ export function placeWalkers(n, rng) {
     setLane(w, [])
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
-      w.t = (rng() > 0.5 ? 1 : -1) * (4.5 + rng() * 8)
+      w.t = (rng() > 0.5 ? 1 : -1) * (4.5 + rng() * (8 + reach))
       if (!out.some((o) => o.road === w.road && Math.abs(o.t - w.t) < 1.6)) break
     }
     w.speed = w.base
@@ -300,7 +304,7 @@ function plazaLimit(w, sig) {
 function turnAround(w, lots) {
   w.dir = -w.dir
   w.waiting = false
-  w.t = Math.max(-WALK.edge, Math.min(WALK.edge, w.t))
+  w.t = Math.max(-(WALK.edge + reach), Math.min(WALK.edge + reach, w.t))
   w.passing = null
   w.still = 0
   setLane(w, lots)
@@ -308,14 +312,14 @@ function turnAround(w, lots) {
 
 function stepWalker(w, walkers, tr, dt) {
   setLane(w, tr.lots)
-  updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far && (plan.start > WALK.zone || plan.end < -WALK.zone))
+  updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far + reach && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
   lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig))
   w.speed = approach(w, lim, WALK, dt)
   slide(w, walkers, WALK, dt)
   w.t += w.dir * w.speed * dt
   w.still = w.speed < 0.03 && !w.waiting ? w.still + dt : 0
-  if (Math.abs(w.t) > WALK.edge || w.still > 20) turnAround(w, tr.lots)
+  if (Math.abs(w.t) > WALK.edge + reach || w.still > 20) turnAround(w, tr.lots)
 }
 
 // ---------- one step for everybody ----------

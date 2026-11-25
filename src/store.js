@@ -9,20 +9,20 @@ import { SYNCED_SETTINGS, pick } from './sync/engine.js'
 
 const KEY = 'dollar-q:v1'
 
-export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other']
+export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other', 'Gulliver']
 export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot']
 export const PALETTE = ['#e5383b', '#3a86ff', '#8338ec', '#b08968', '#2d936c', '#ff7f50', '#8d6e63', '#118ab2', '#f4a259', '#d62f8b', '#4361ee', '#e056a0']
-export const MAX_COUNTIES = 12
+export const MAX_COUNTIES = 24
 export const MAX_ACCOUNTS = 5
 export const MAX_SUB = 5
 
 const county = (name, group, style, i, icon) => ({ id: 'c' + (i + 1), name, group, style, icon, color: PALETTE[i % PALETTE.length] })
 
 export const DEFAULT_COUNTIES = [
-  county('Home & Rent', 'Home', 'house', 0, 'home'),
+  county('Home & Rent', 'Gulliver', 'house', 0, 'home'),
   county('Utilities', 'Home', 'tower', 1, 'bolt'),
   county('Subscriptions', 'Media', 'shop', 2, 'repeat'),
-  county('Banking', 'Other', 'dome', 3, 'bank'),
+  county('Investments', 'Gulliver', 'dome', 3, 'bank'),
   county('Groceries', 'Food', 'market', 4, 'cart'),
   county('Restaurants', 'Food', 'cafe', 5, 'fork'),
   county('Cafes', 'Food', 'cafe', 6, 'coffee'),
@@ -30,7 +30,7 @@ export const DEFAULT_COUNTIES = [
   county('Miscellaneous', 'Other', 'market', 8, 'dots'),
   county('Entertainment', 'Media', 'cinema', 9, 'film'),
   county('Electronics', 'Shopping', 'tech', 10, 'chip'),
-  county('Fashion', 'Shopping', 'shop', 11, 'shirt'),
+  county('Gifts', 'Gulliver', 'shop', 11, 'tag'),
 ]
 
 const initial = () => ({

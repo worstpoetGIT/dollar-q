@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import Icon from './Icon.jsx'
 import { countyIcon } from './Editors.jsx'
 import { setState } from '../store.js'
-import { fmt, fmtNum, symbolOf, ymOf, shiftYm, monthLabel, daysIn } from '../util.js'
+import { fmt, fmtNum, symbolOf, ymOf, shiftYm, monthLabel, daysIn, isGulliver } from '../util.js'
 import { useLenis } from '../hooks.js'
 
 export function CurrencyChips({ s, cur }) {
@@ -24,7 +24,10 @@ export default function Analytics({ s }) {
   const cur = cs.includes(s.currency) ? s.currency : cs[0]
 
   const d = useMemo(() => {
-    const inCur = s.expenses.filter((e) => e.currency === cur)
+    // Gulliver (rent, investments, gifts) is left out of everything below and shown on its own line
+    const gulliverIds = new Set(s.counties.filter(isGulliver).map((c) => c.id))
+    const inCur = s.expenses.filter((e) => e.currency === cur && !gulliverIds.has(e.countyId))
+    const gulliver = s.expenses.filter((e) => e.currency === cur && gulliverIds.has(e.countyId) && ymOf(e.ts) === ym).reduce((a, e) => a + e.amount, 0)
     const sumYm = (k) => inCur.filter((e) => ymOf(e.ts) === k).reduce((a, e) => a + e.amount, 0)
     const month = inCur.filter((e) => ymOf(e.ts) === ym)
     const n = daysIn(ym)
@@ -37,7 +40,7 @@ export default function Analytics({ s }) {
     month.forEach((e) => { per[e.countyId] = (per[e.countyId] || 0) + e.amount })
     const top = s.counties.map((c) => ({ c, v: per[c.id] || 0 })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v)
     const hasEarlier = inCur.some((e) => ymOf(e.ts) < ym)
-    return { n, days, total, h1, h2: total - h1, last: sumYm(shiftYm(ym, -1)), trend, top, hasEarlier }
+    return { n, days, total, h1, h2: total - h1, last: sumYm(shiftYm(ym, -1)), trend, top, hasEarlier, gulliver }
   }, [s.expenses, s.counties, cur, ym])
 
   const diff = d.total - d.last
@@ -70,6 +73,7 @@ export default function Analytics({ s }) {
             {hasLast && <div className="muted" style={{ fontSize: 14.4, marginTop: 2 }}>{diff === 0 ? 'Same as last month' : `${Math.abs(Math.round((diff / d.last) * 100))}% ${diff > 0 ? 'more' : 'less'}`}</div>}
           </div>
         </div>
+        {d.gulliver > 0 && <div className="muted" style={{ fontSize: 15, marginTop: 12 }}>Gulliver (rent, investments, gifts): {fmt(d.gulliver, cur)} this month, not counted above.</div>}
         {!d.hasEarlier && <div className="pill fade-up" style={{ background: 'color-mix(in srgb, var(--indigo) 14%, var(--surface))', color: 'var(--indigo)', marginTop: 14 }}>First month tracking in $?</div>}
 
         <div className="card fade-up" style={{ marginTop: 18 }}>
