@@ -228,6 +228,40 @@ function makeTruck(color = 0xf08a24) {
   return g
 }
 
+// a small swimming fish for the pavements of the ocean map. it faces +z like a person does, and its tail pivot wags.
+function makeFish(color, rng) {
+  const g = new THREE.Group()
+  const body = mk(g, new THREE.SphereGeometry(0.2, 10, 8), color, 0, 0, 0)
+  body.scale.set(0.55, 0.85, 1.6)
+  const tail = new THREE.Group()
+  tail.position.set(0, 0, -0.3)
+  g.add(tail)
+  const fin = mk(tail, new THREE.ConeGeometry(0.16, 0.26, 4), shade(color, -0.12), 0, 0, -0.12)
+  fin.rotation.x = -Math.PI / 2 // the tip trails behind
+  fin.scale.x = 0.35
+  mk(g, new THREE.ConeGeometry(0.08, 0.15, 4), shade(color, 0.12), 0, 0.17, -0.02) // the fin on its back
+  for (const sx of [-1, 1]) mk(g, new THREE.SphereGeometry(0.035, 6, 5), 0x111111, sx * 0.075, 0.05, 0.25, false)
+  g.userData = { fish: true, tail, body }
+  g.scale.setScalar(1.5 + rng() * 0.6)
+  return g
+}
+
+// a diver: a person in a wetsuit with a mask, an air tank and flippers (used for walking, felling trees and fighting on the ocean map)
+function makeDiver(rng) {
+  const g = makePerson(rng)
+  const u = g.userData
+  u.hat.visible = false
+  u.hands.forEach((h) => h.material.color.set(0x222222))
+  mk(g, new THREE.BoxGeometry(0.23, 0.09, 0.05), 0x8fe3ff, 0, 1.02, 0.15, false) // the mask
+  bx(g, 0.26, 0.03, 0.04, 0x111111, 0, 1.02, 0.13)
+  cyl(g, 0.075, 0.42, 0xf4a000, 0, 0.3, -0.17, 10) // the air tank
+  bx(g, 0.05, 0.08, 0.05, 0x777777, 0, 0.74, -0.17)
+  for (const leg of u.legs) bx(leg, 0.14, 0.03, 0.3, 0x111111, 0, -0.47, 0.16) // flippers
+  g.rotation.order = 'YXZ'
+  u.diver = true
+  return g
+}
+
 function makePerson(rng) {
   const g = new THREE.Group()
   const skin = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac][Math.floor(rng() * 5)]
@@ -719,7 +753,7 @@ export class CityScene {
     this.world.add(pivot)
     g.position.set(0, 0, 0)
     pivot.add(g)
-    const worker = makePerson(this.rng)
+    const worker = this.folk()
     worker.position.set(x + dir.x * 0.85, 0.1, z + dir.z * 0.85)
     worker.rotation.y = Math.atan2(-dir.x, -dir.z) // facing the tree
     const axe = new THREE.Group()
@@ -825,7 +859,7 @@ export class CityScene {
     const hitAt = front.t - front.dir * front.hl // where the bumpers met
     a.axis = r.axis
     a.fighters = [0, 1].map((j) => {
-      const p = makePerson(this.rng)
+      const p = this.folk()
       p.scale.setScalar(0.001)
       this.world.add(p)
       // the driver of the rear car stands behind the meeting point and faces forward, the other the other way round
@@ -869,12 +903,23 @@ export class CityScene {
     if (this.crashClock >= 1) { this.crashClock = 0; this.maybeCrash() }
   }
 
+  // somebody to work or fight: a person, or a diver under the sea
+  folk() {
+    return this.sea ? makeDiver(this.rng) : makePerson(this.rng)
+  }
+
   buildWalkers() {
     const rng = this.rng
     const P = this.T.people
     this.walkers = placeWalkers(this.ring2 ? 12 : 8, rng)
-    for (const w of this.walkers) {
-      const p = makePerson(rng)
+    this.walkers.forEach((w, n) => {
+      if (this.sea && n % 2 === 0) { // every other one is a fish
+        const fish = makeFish(P.fish[Math.floor(rng() * P.fish.length)], rng)
+        Object.assign(w, { p: fish, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: 0 })
+        this.world.add(fish)
+        return
+      }
+      const p = this.sea ? makeDiver(rng) : makePerson(rng)
       Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
       const u = p.userData
       if (P.skin) { u.skin = P.skin; u.head.material.color.set(P.skin); u.hands.forEach((h) => h.material.color.set(P.skin)) }
@@ -884,10 +929,10 @@ export class CityScene {
       u.sleeves.forEach((mm) => mm.material.color.set(coat))
       u.thighs.forEach((mm) => mm.material.color.set(pants))
       u.shins.forEach((mm) => mm.material.color.set(P.shorts ? u.skin : pants))
-      u.hat.visible = !!P.hat
+      if (!u.diver) u.hat.visible = !!P.hat
       if (P.hat) u.hat.material.color.set(P.hats ? P.hats[w.ci % P.hats.length] : P.hat)
       this.world.add(p)
-    }
+    })
   }
 
   buildCars() {
@@ -946,6 +991,7 @@ export class CityScene {
     this.map = name
     this.mapKey = key
     const T = (this.T = MAPS[key])
+    this.sea = T.people.kind === 'sea'
     TOON = !!T.toon
     WIRE = !!T.wire
     if (this.world) {
@@ -1406,12 +1452,30 @@ export class CityScene {
       const k = Math.min(1, w.speed * 4)
       const sw = Math.sin(w.ph) * k
       const u = w.p.userData
-      u.legs[0].rotation.x = sw * 0.75
-      u.legs[1].rotation.x = -sw * 0.75
-      u.arms[0].rotation.x = -sw * 0.6
-      u.arms[1].rotation.x = sw * 0.6
-      u.torso.rotation.y = sw * 0.08
-      const bob = Math.abs(Math.cos(w.ph)) * 0.045 * k
+      let lift = 0.1 // how high above the ground
+      const t = this.clock.elapsedTime + w.ci * 1.7
+      if (u.fish) { // a fish never stands still: the tail keeps wagging while it waits, and it drifts up and down
+        const wag = Math.sin(t * (5 + k * 4))
+        u.tail.rotation.y = wag * 0.55
+        u.body.rotation.y = -wag * 0.12
+        lift = 0.55 + Math.sin(t * 1.4) * 0.09
+      } else if (u.diver) { // a diver swims: arms out in front, a gentle flutter kick, leaning forward, floating
+        const kick = Math.sin(t * (4 + k * 3))
+        u.legs[0].rotation.x = kick * 0.5
+        u.legs[1].rotation.x = -kick * 0.5
+        u.arms[0].rotation.x = -1.3 + Math.sin(t * 2) * 0.15
+        u.arms[1].rotation.x = -1.3 - Math.sin(t * 2) * 0.15
+        w.p.rotation.x = 0.35
+        lift = 0.3 + Math.sin(t * 1.2) * 0.07
+      } else {
+        u.legs[0].rotation.x = sw * 0.75
+        u.legs[1].rotation.x = -sw * 0.75
+        u.arms[0].rotation.x = -sw * 0.6
+        u.arms[1].rotation.x = sw * 0.6
+        u.torso.rotation.y = sw * 0.08
+        lift += Math.abs(Math.cos(w.ph)) * 0.045 * k
+      }
+      const bob = lift - 0.1
       if (w.axis === 'x') {
         w.p.position.set(w.t, 0.1 + bob, w.lat)
         w.p.rotation.y = w.dir > 0 ? Math.PI / 2 : -Math.PI / 2

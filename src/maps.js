@@ -458,7 +458,8 @@ export function makeMaps(h) {
     ocean: T('ocean', {
       c: { base: 0x8a7a52, base2: 0x6e6040, grass: 0xd9c58f, pad: 0xe6d6a8, road: 0xbfa873, lampPole: 0x4a6b7a, lampGlow: 0x7ff6ff, water: 0x2fb3c9, round: 0xff7f6e, pine: 0x3fbf7f, blossom: 0xc77dff, trunk: 0xff9e80, park: 0xcbb682, court: 0xcbb682, courtLine: 0xe6d6a8, plaza: 0xcbb682, stone: 0x9aa5b1, grove: 0xcbb682, bench: 0x8b5a2b, crate: [0xff7f6e, 0xffd166, 0x4dd0e1], empty: 0xbfa873 },
       sun: [0xbfe9ff, 1.9], hemi: [0x9fe3ff, 0x1f5c7a, 1.7], fog: [0x9fe0f5, 40, 115], glowLamps: true,
-      people: { coats: [0xff6b00, 0xf4d35e, 0x111111, 0xff2d55, 0x00b4d8, 0x2b2d42], pants: [0x111111, 0x1d3557, 0x2b2d42], hat: 0xf4d35e, shorts: false },
+      // under the sea nobody walks: the pavements are for fish and divers
+      people: { kind: 'sea', fish: [0xff8c42, 0x4dd0e1, 0xf72585, 0xffd166, 0x80ed99, 0xc77dff], coats: [0xff6b00, 0xf4d35e, 0x111111, 0xff2d55, 0x00b4d8, 0x2b2d42], pants: [0x111111, 0x1d3557, 0x2b2d42], hat: null, shorts: false },
       particle: { color: 0xffffff, size: 0.22, fall: -1.6, sway: 0.5 },
       tree: 'coral', dashes: false, landmarks: { 0: land.reef, 1: land.wreck, 2: land.reef },
     }),
