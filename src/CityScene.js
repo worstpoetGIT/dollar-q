@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
-import { treesLeft, TREES_PER_LOT, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from './cityRules.js'
+import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS, brickAt, BRICKS_PER_FLOOR, BRICK_EVERY, BRICK_FLIGHT, PAINT_TIME } from './cityRules.js'
 import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash } from './traffic.js'
 
 // helpers
@@ -320,8 +320,6 @@ const CELLS = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1]] // the first 12 counties
 // counties 13 to 24: the old park corner becomes a lot, and there are two more along the roads. the park moves out to the corner.
 const CELLS_2 = [[11.1, 11.1], [17.3, 4.9], [4.9, 17.3]]
 export const BIG_CITY = 12 // with more counties than this the city grows a second ring. dormant: the app allows 12 counties (MAX_COUNTIES in store.js), raise that to switch it on
-// where the trees of a county stand, inside its plot (the last ones are cut first)
-const TREE_SLOTS = [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8], [0, -2.1], [0, 2.1], [-2.1, 0], [2.1, 0]]
 const HALF = [15, 22] // from the middle of the city to the edge of the board
 const TAU = Math.PI * 2
 
@@ -334,6 +332,7 @@ export class CityScene {
     this.rng = mulberry(7)
     this.crashes = [] // staged accidents: two cars that bumped, and the drivers fighting
     this.crashClock = 0
+    this.crashDue = false // the dice said an accident should happen: keep trying to place the cars until it works
     this.odds = [] // for every lot: how much is spent in its county, its group and level (what decides where accidents happen)
     this.felling = [] // trees being cut down, with the worker
     this.growing = [] // trees being planted
@@ -727,13 +726,12 @@ export class CityScene {
 
   // ---- the trees around a county: workers cut them down as it grows, and they are planted again when it shrinks ----
   slotAt(lot, k) {
-    const [ox, oz] = TREE_SLOTS[k]
-    return [lot.pos.x + ox, lot.pos.z + oz]
+    return treeSpot(lot.pos.x, lot.pos.z, k) // never over the pavement, see cityRules.js
   }
 
   plantTree(lot, k, animate) {
     const [x, z] = this.slotAt(lot, k)
-    const g = this.tree(x, z, 0.7 + (k % 3) * 0.06, k % 2 ? 'p' : 'r')
+    const g = this.tree(x, z, 0.6 + (k % 3) * 0.05, k % 2 ? 'p' : 'r')
     lot.trees[k] = g
     if (animate) { g.scale.setScalar(0.01); this.growing.push({ g, t: 0 }) }
   }
@@ -825,7 +823,8 @@ export class CityScene {
 
   // ---- accidents: the car behind bumps the one in front, the drivers get out and fight until the county's spending is zero ----
   maybeCrash(force = false) {
-    if (this.crashes.length >= MAX_ACCIDENTS || this.cars.length < 6) return false
+    const cap = this.cars.length >= 8 ? MAX_ACCIDENTS : 1 // a map with few vehicles can only spare one pair
+    if (this.crashes.length >= cap || this.cars.length < 4) return false
     const weights = accidentWeights(this.odds.map((o) => o || null), this.lots.map((l) => !!l.road))
     const danger = weights.reduce((a, b) => a + b, 0)
     if (!force && this.rng() > accidentChance(danger, 1)) return false
@@ -849,7 +848,32 @@ export class CityScene {
       this.crashes.push({ lot: k, front, rear, phase: 'bump', t: 0, fighters: null })
       return true
     }
-    return false
+    return this.summonCrash(k) // nobody was in the right place: two cars come up the road in front of the county
+  }
+
+  summonCrash(k) {
+    const lot = this.lots[k]
+    const r = lot.road
+    const spare = this.cars.filter((c) => !c.active)
+    if (spare.length < 2) return false
+    const [front, rear] = spare
+    const lane = r.side * 0.75
+    const dir = r.axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1) // the way traffic goes in that lane
+    const out = Math.sign(r.along) // which way from the crossroad the county is
+    const tFront = out * Math.max(5.9, Math.abs(r.along) + 1.4) // in front of the county, as far from the crossroad as it allows
+    const tRear = tFront - dir * (front.hl + rear.hl + 1.2) // just behind it
+    if (Math.abs(tRear) < 4.2 || Math.abs(tRear) > this.E - 1) return false // not into the crossroad, and not off the board
+    for (const c of this.cars) { // not on top of another car
+      if (!c.active || c.road !== r.axis || Math.abs(c.lat - lane) > 0.6) continue
+      if (Math.abs(c.t - tFront) < front.hl + c.hl + 0.6 || Math.abs(c.t - tRear) < rear.hl + c.hl + 0.6) return false
+    }
+    const base = 2.2
+    for (const [c, t] of [[front, tFront], [rear, tRear]]) {
+      Object.assign(c, { active: true, axis: r.axis, road: r.axis, lane, alt: -lane, lat: lane, goal: lane, dir, t, base, speed: base, passing: null, still: 0, crash: null })
+    }
+    startCrash(front, rear)
+    this.crashes.push({ lot: k, front, rear, phase: 'bump', t: 0, fighters: null })
+    return true
   }
 
   makeFighters(a) {
@@ -900,7 +924,110 @@ export class CityScene {
       }
     }
     this.crashClock += dt
-    if (this.crashClock >= 1) { this.crashClock = 0; this.maybeCrash() }
+    if (this.crashClock >= 0.5) {
+      this.crashClock = 0
+      if (!this.crashDue) {
+        const danger = accidentWeights(this.odds.map((o) => o || null), this.lots.map((l) => !!l.road)).reduce((a, b) => a + b, 0)
+        if (this.crashes.length < MAX_ACCIDENTS && this.rng() < accidentChance(danger, 0.5)) this.crashDue = true
+      }
+      if (this.crashDue && this.maybeCrash(true)) this.crashDue = false
+    }
+  }
+
+  // ---- the crew that builds a new floor: bricks thrown one by one, the building rising with each, then painted ----
+  startCrew(lot, anims) {
+    if (lot.crew || !anims.length || !lot.county) return
+    const kit = BRICK_KITS[this.T.id] || BRICK_KITS.city
+    const centre = [lot.pos.x - 0.55 * lot.size, lot.pos.z - 0.55 * lot.size]
+    const small = this.T.id === 'lego' ? 0.78 : 1.05 // kids on the Lego map
+    const make = (k, role) => {
+      const p = this.folk()
+      const u = p.userData
+      if (!u.diver) { u.hat.visible = true; u.hat.material.color.set(0xffd60a) } // the yellow hard hat
+      const [sx, sz] = treeSpot(lot.pos.x, lot.pos.z, k)
+      const x = sx + (lot.pos.x - sx) * 0.4, z = sz + (lot.pos.z - sz) * 0.4 // a bit closer to the building, still off the pavement
+      p.position.set(x, 0.1, z)
+      p.rotation.y = Math.atan2(centre[0] - x, centre[1] - z)
+      p.scale.setScalar(0.001)
+      this.world.add(p)
+      return { p, role, size: small }
+    }
+    const workers = [make(0, 'layer'), make(2, 'layer'), make(4, 'painter')]
+    const roller = new THREE.Group() // the painter's roller, in the county's colour
+    bx(roller, 0.03, 0.4, 0.03, 0x6b5a3e, 0, -0.5, 0.12)
+    bx(roller, 0.24, 0.1, 0.1, new THREE.Color(lot.county.color).getHex(), 0, -0.72, 0.12)
+    workers[2].p.userData.arms[1].add(roller)
+    const mats = new Set()
+    for (const a of anims) a.g.traverse((n) => { if (n.material) for (const mm of Array.isArray(n.material) ? n.material : [n.material]) if (mm.userData.base) mats.add(mm) })
+    for (const mm of mats) mm.color.copy(WALL)
+    for (const a of anims) a.crew = true
+    lot.crew = { t: 0, phase: 'build', n: BRICKS_PER_FLOOR, launched: 0, landed: 0, workers, flying: [], mats: [...mats], kit, centre, show: 0, anims, before: anims[0].from }
+  }
+
+  throwBrick(lot, which) {
+    const c = lot.crew
+    const w = c.workers[which]
+    const m = makeBrick(c.kit, this.rng)
+    const from = [w.p.position.x, 0.1 + 0.9 * w.size, w.p.position.z]
+    const frac = c.before + (1 - c.before) * Math.min(1, (c.landed + 1) / c.n) // how tall the building will be when this brick lands
+    const to = [c.centre[0] + (this.rng() - 0.5) * 0.9, Math.max(0.5, lot.top * frac), c.centre[1] + (this.rng() - 0.5) * 0.9]
+    m.position.set(from[0], from[1], from[2])
+    this.world.add(m)
+    c.flying.push({ m, t: 0, from, to })
+    w.throwAt = c.t
+  }
+
+  updateCrew(lot, dt) {
+    const c = lot.crew
+    c.t += dt
+    const leaving = c.phase === 'leave'
+    const size = Math.min(1, c.t / 0.4) * (leaving ? Math.max(0.001, 1 - c.leave / 0.5) : 1)
+    for (const w of c.workers) w.p.scale.setScalar(w.size * Math.max(0.001, size))
+    if (c.phase === 'build') {
+      while (c.launched < c.n && c.t >= 0.4 + c.launched * BRICK_EVERY) { this.throwBrick(lot, c.launched % 2); c.launched++ }
+    }
+    for (let i = c.flying.length - 1; i >= 0; i--) { // bricks in the air
+      const f = c.flying[i]
+      f.t += dt / BRICK_FLIGHT
+      const [x, y, z] = brickAt(f.from, f.to, f.t)
+      f.m.position.set(x, y, z)
+      f.m.rotation.y += dt * 9
+      f.m.rotation.x += dt * 4
+      if (f.t >= 1) { this.disposePart(f.m); c.flying.splice(i, 1); c.landed++ }
+    }
+    c.show += (c.landed / c.n - c.show) * Math.min(1, dt * 14) // the building steps up with each brick that lands
+    for (const a of c.anims) a.t = c.phase === 'build' ? Math.min(0.999, c.show) : 1 - 1e-6
+    for (const w of c.workers) {
+      const u = w.p.userData
+      if (w.role === 'layer') {
+        const k = w.throwAt === undefined ? 9 : c.t - w.throwAt
+        const swing = k < 0.3 ? Math.sin((k / 0.3) * Math.PI) : 0 // the arm swings up and over as the brick leaves
+        u.arms[1].rotation.x = -0.4 - swing * 2.2
+        u.arms[0].rotation.x = -0.9 + Math.sin(c.t * 3) * 0.1
+      } else { // the painter rolls up and down the wall
+        u.arms[1].rotation.x = -1.3 + Math.sin(c.t * 7) * 0.6
+        u.arms[0].rotation.x = -0.5
+      }
+    }
+    if (c.phase === 'build' && c.landed >= c.n) { c.phase = 'paint'; c.paint = 0 }
+    if (c.phase === 'paint') {
+      c.paint += dt
+      const k = Math.min(1, c.paint / PAINT_TIME)
+      for (const mm of c.mats) {
+        const target = mm.userData.base.clone()
+        if (lot.dim > 0) target.lerp(DIM, lot.dim * 0.78)
+        mm.color.copy(WALL).lerp(target, k)
+      }
+      if (c.paint >= PAINT_TIME + 0.25) { c.phase = 'leave'; c.leave = 0; for (const a of c.anims) a.t = 1 }
+    }
+    if (c.phase === 'leave') {
+      c.leave += dt
+      if (c.leave >= 0.5) {
+        for (const w of c.workers) this.disposePart(w.p)
+        for (const f of c.flying) this.disposePart(f.m)
+        lot.crew = null
+      }
+    }
   }
 
   // somebody to work or fight: a person, or a diver under the sea
@@ -1011,6 +1138,7 @@ export class CityScene {
     this.growing = []
     this.crashes = []
     this.crashClock = 0
+    this.crashDue = false
     this.odds = []
     this.E = HALF[this.ring2 ? 1 : 0]
     this.traffic = makeTraffic(this.E - 15)
@@ -1222,6 +1350,7 @@ export class CityScene {
     if (lot.dim < 0) lot.dim = 0
     if (!animate) { lot.size = stageSize(lot); this.sizeLot(lot) }
     this.setTrees(lot, treesLeft(L), !!animate) // a new floor costs a tree or two
+    if (animate && c) this.startCrew(lot, lot.anims.filter((a) => a.t === 0 && !a.crew)) // and a crew builds it, brick by brick
   }
 
   // a lot's outline, pad and everything on it are smaller while the county has little spending, which leaves the footpath beside it roomier
@@ -1418,11 +1547,12 @@ export class CityScene {
         lot.crane.scale.setScalar(Math.max(0.001, cu.grow))
         if (cu.leaving && cu.grow < 0.02) { this.disposePart(lot.crane); lot.crane = null }
       }
+      if (lot.crew) this.updateCrew(lot, dt)
       if (lot.anims && lot.anims.length) {
         const dur = Math.max(1, Math.min(2.7, lot.stepEvery * 1.6))
         for (const a of lot.anims) {
-          a.t = Math.min(1, a.t + dt / dur)
-          const e = a.t * a.t * (3 - 2 * a.t) // smooth start and stop, no bounce
+          if (!a.crew) a.t = Math.min(1, a.t + dt / dur) // the crew drives its own floor, brick by brick
+          const e = a.crew ? a.t : a.t * a.t * (3 - 2 * a.t) // (otherwise: smooth start and stop, no bounce)
           a.g.scale.y = a.sy * (a.from + (1 - a.from) * e)
         }
         lot.anims = lot.anims.filter((a) => a.t < 1)
@@ -1530,6 +1660,34 @@ export class CityScene {
 }
 
 const DIM = new THREE.Color(0x9a9a98)
+const WALL = new THREE.Color(0xeeeae0) // a new floor starts out as raw white plaster, then the painter rolls it into its colour
+
+// what each map builds with: bricks on the classic map, Lego bricks, planks, ice cubes, sandbags, shells, basketballs
+const BRICK_KITS = {
+  city: { colors: [0xb5543a, 0xc9694b, 0xa04632], shape: 'brick' },
+  lego: { colors: [0xe3000b, 0xffd500, 0x0057b8, 0x00852b], shape: 'lego' },
+  japan: { colors: [0x8b5a2b, 0xb08968, 0xd9c7a0], shape: 'plank' },
+  ice: { colors: [0xcfeeff, 0xe8f6ff, 0xaee1ff], shape: 'cube' },
+  wire: { colors: [0x0a66c2, 0x0a8f3c, 0xc2187a], shape: 'cube' },
+  war: { colors: [0x9a8562, 0x7a6a4a, 0x5d6b3a], shape: 'sandbag' },
+  ocean: { colors: [0xff7f6e, 0xffd166, 0xc77dff], shape: 'shell' },
+  court: { colors: [0xe8742a], shape: 'ball' },
+}
+
+function makeBrick(kit, rng) {
+  const g = new THREE.Group()
+  const c = kit.colors[Math.floor(rng() * kit.colors.length)]
+  if (kit.shape === 'lego') {
+    bx(g, 0.32, 0.16, 0.2, c, 0, 0, 0)
+    for (const sx of [-1, 1]) cyl(g, 0.05, 0.06, c, sx * 0.08, 0.1, 0, 8)
+  } else if (kit.shape === 'plank') bx(g, 0.5, 0.07, 0.14, c, 0, 0, 0)
+  else if (kit.shape === 'cube') bx(g, 0.24, 0.24, 0.24, c, 0, 0, 0)
+  else if (kit.shape === 'sandbag') bx(g, 0.38, 0.14, 0.22, c, 0, 0, 0)
+  else if (kit.shape === 'shell') mk(g, new THREE.SphereGeometry(0.15, 8, 6), c, 0, 0, 0).scale.y = 0.7
+  else if (kit.shape === 'ball') mk(g, new THREE.SphereGeometry(0.18, 10, 8), c, 0, 0, 0)
+  else bx(g, 0.34, 0.16, 0.17, c, 0, 0, 0)
+  return g
+}
 // the size of a lot follows its level: small while there is little spending, bigger (and the footpath thinner) the more is spent
 const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 

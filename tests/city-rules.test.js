@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TREES_PER_LOT, treesLeft } from '../src/cityRules.js'
+import { TREES_PER_LOT, treesLeft, treeSpot, ROAD_CLEAR } from '../src/cityRules.js'
 
 describe('trees around a county', () => {
   it('an empty county keeps every tree', () => {
@@ -31,6 +31,26 @@ describe('trees around a county', () => {
   it('shrinking a county (a new month, expenses deleted) plants the trees again', () => {
     expect(treesLeft(3)).toBeGreaterThan(treesLeft(9))
     expect(treesLeft(0)).toBe(TREES_PER_LOT)
+  })
+
+  it('trees never stand over a pavement: every tree of every lot is well away from both roads, and inside the quadrant of its lot', () => {
+    const cells = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1], [11.1, 11.1], [17.3, 4.9], [4.9, 17.3]]
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      for (const [cx, cz] of cells) {
+        const x0 = sx * cx, z0 = sz * cz
+        const spots = Array.from({ length: TREES_PER_LOT }, (_, k) => treeSpot(x0, z0, k))
+        for (const [x, z] of spots) {
+          expect(Math.abs(x)).toBeGreaterThanOrEqual(ROAD_CLEAR - 1e-9)
+          expect(Math.abs(z)).toBeGreaterThanOrEqual(ROAD_CLEAR - 1e-9)
+          expect(Math.sign(x)).toBe(sx)
+          expect(Math.sign(z)).toBe(sz)
+          expect(Math.hypot(x - x0, z - z0)).toBeGreaterThan(1.9) // not on top of the building
+          expect(Math.abs(x - x0)).toBeLessThan(2.6)
+          expect(Math.abs(z - z0)).toBeLessThan(2.6) // and still in its own plot
+        }
+        for (let i = 0; i < spots.length; i++) for (let j = i + 1; j < spots.length; j++) expect(Math.hypot(spots[i][0] - spots[j][0], spots[i][1] - spots[j][1])).toBeGreaterThan(0.7)
+      }
+    }
   })
 
   it('copes with nonsense levels', () => {
@@ -109,7 +129,7 @@ describe('where the accidents happen', () => {
     expect(accidentChance(0.2, 1)).toBeLessThan(accidentChance(1, 1))
     expect(accidentChance(1, 1)).toBeLessThan(1)
     expect(accidentChance(-3, 1)).toBe(0)
-    expect(accidentChance(1, 15)).toBeGreaterThan(0.6)
+    expect(accidentChance(1, 8)).toBeGreaterThan(0.6)
   })
 
   it('a fight goes on while the county has spending, and stops when it comes down to zero', () => {
@@ -121,5 +141,43 @@ describe('where the accidents happen', () => {
 
   it('there is a small limit on how many crashes can be going at once', () => {
     expect(MAX_ACCIDENTS).toBe(2)
+  })
+})
+
+import { brickAt, floorTime, heightWhileBuilding, BRICKS_PER_FLOOR, BRICK_EVERY, BRICK_FLIGHT, PAINT_TIME } from '../src/cityRules.js'
+
+describe('the building crew', () => {
+  it('a brick leaves the hand, rises in an arc, and lands exactly on the wall', () => {
+    const from = [1, 0.9, 1], to = [3, 2.5, -1]
+    expect(brickAt(from, to, 0)).toEqual(from)
+    expect(brickAt(from, to, 1)).toEqual(to)
+    const mid = brickAt(from, to, 0.5)
+    expect(mid[0]).toBeCloseTo(2, 10)
+    expect(mid[2]).toBeCloseTo(0, 10)
+    expect(mid[1]).toBeGreaterThan((0.9 + 2.5) / 2 + 0.5) // above the straight line: an arc
+  })
+
+  it('never flies outside 0 to 1', () => {
+    expect(brickAt([0, 0, 0], [1, 1, 1], -3)).toEqual([0, 0, 0])
+    expect(brickAt([0, 0, 0], [1, 1, 1], 9)).toEqual([1, 1, 1])
+  })
+
+  it('the building rises in equal steps, one per brick, from what stood before to the new height', () => {
+    expect(heightWhileBuilding(2, 3, 0)).toBe(2)
+    expect(heightWhileBuilding(2, 3, BRICKS_PER_FLOOR)).toBe(3)
+    let last = 2
+    for (let landed = 1; landed <= BRICKS_PER_FLOOR; landed++) {
+      const h = heightWhileBuilding(2, 3, landed)
+      expect(h - last).toBeCloseTo(1 / BRICKS_PER_FLOOR, 10)
+      last = h
+    }
+    expect(heightWhileBuilding(2, 3, 99)).toBe(3) // extra bricks change nothing
+    expect(heightWhileBuilding(2, 3, -4)).toBe(2)
+  })
+
+  it('a floor takes a few seconds, not a blink and not a minute', () => {
+    expect(floorTime()).toBeCloseTo((BRICKS_PER_FLOOR - 1) * BRICK_EVERY + BRICK_FLIGHT + PAINT_TIME, 10)
+    expect(floorTime()).toBeGreaterThan(2.5)
+    expect(floorTime()).toBeLessThan(6)
   })
 })
