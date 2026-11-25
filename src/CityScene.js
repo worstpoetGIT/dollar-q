@@ -2,8 +2,8 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
-import { treesLeft, TREES_PER_LOT } from './cityRules.js'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize } from './traffic.js'
+import { treesLeft, TREES_PER_LOT, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from './cityRules.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -298,6 +298,9 @@ export class CityScene {
     this.onSelect = onSelect || (() => {})
     this.onViewChanged = onViewChanged || (() => {})
     this.rng = mulberry(7)
+    this.crashes = [] // staged accidents: two cars that bumped, and the drivers fighting
+    this.crashClock = 0
+    this.odds = [] // for every lot: how much is spent in its county, its group and level (what decides where accidents happen)
     this.felling = [] // trees being cut down, with the worker
     this.growing = [] // trees being planted
     this.ring2 = false // the city grows a second ring when there are more than BIG_CITY counties
@@ -527,6 +530,16 @@ export class CityScene {
         const placed = this.lots[this.lots.length - 1]
         placed.trees = Array(TREES_PER_LOT).fill(null)
         for (let k = 0; k < TREES_PER_LOT; k++) this.plantTree(placed, k, false)
+        // the road in front of the lot (only the lots next to a road have one) and the strip of it the county takes as it grows
+        const nearX = Math.abs(Math.abs(pos.z) - 4.9) < 0.5, nearZ = Math.abs(Math.abs(pos.x) - 4.9) < 0.5
+        placed.road = nearX ? { axis: 'x', along: pos.x, side: Math.sign(pos.z) } : nearZ ? { axis: 'z', along: pos.z, side: Math.sign(pos.x) } : null
+        placed.taken = 0
+        if (placed.road) {
+          const along = placed.road.axis === 'x'
+          const strip = mk(s, new THREE.BoxGeometry(along ? 4.9 : 1, 0.08, along ? 1 : 4.9), shade(C.pad, -0.22), 0, 0.075, 0, false)
+          strip.visible = false
+          placed.strip = strip
+        }
         i++
       }
      }
@@ -760,6 +773,102 @@ export class CityScene {
     }
   }
 
+  // ---- the road in front of a county gets narrower with every floor ----
+  updateRoads(dt) {
+    for (const lot of this.lots) {
+      if (!lot.road) continue
+      const target = roadTaken(lot.built ? lot.built.L : 0)
+      lot.taken += (target - lot.taken) * Math.min(1, dt * 2)
+      const n = lot.taken
+      lot.strip.visible = n > 0.01
+      if (!lot.strip.visible) continue
+      const { axis, along, side } = lot.road
+      const mid = side * (1.5 - n / 2) // from the edge of the road inwards
+      if (axis === 'x') { lot.strip.position.set(along, 0.075, mid); lot.strip.scale.set(1, 1, n) }
+      else { lot.strip.position.set(mid, 0.075, along); lot.strip.scale.set(n, 1, 1) }
+    }
+  }
+
+  // ---- accidents: the car behind bumps the one in front, the drivers get out and fight until the county's spending is zero ----
+  maybeCrash(force = false) {
+    if (this.crashes.length >= MAX_ACCIDENTS || this.cars.length < 6) return false
+    const weights = accidentWeights(this.odds.map((o) => o || null), this.lots.map((l) => !!l.road))
+    const danger = weights.reduce((a, b) => a + b, 0)
+    if (!force && this.rng() > accidentChance(danger, 1)) return false
+    const k = pickLot(weights, this.rng())
+    if (k < 0 || this.crashes.some((a) => a.lot === k)) return false
+    const lot = this.lots[k]
+    const r = lot.road
+    const free = (c) => c.active && !c.crash && !c.passing && c.road === r.axis && Math.abs(c.lat - c.lane) < 0.1
+    // the front car: on the lot's side of the road, in front of the lot, and clear of the crossroad
+    for (const front of this.cars) {
+      if (!free(front) || Math.sign(front.lat) !== r.side || Math.abs(front.t - r.along) > 2.6 || Math.abs(front.t) < 5.2) continue
+      let rear = null
+      let best = 6
+      for (const c of this.cars) {
+        if (c === front || !free(c) || c.dir !== front.dir || Math.sign(c.lat) !== Math.sign(front.lat)) continue
+        const gap = (front.t - c.t) * front.dir - front.hl - c.hl
+        if (gap > 0.3 && gap < best) { best = gap; rear = c }
+      }
+      if (!rear) continue
+      startCrash(front, rear)
+      this.crashes.push({ lot: k, front, rear, phase: 'bump', t: 0, fighters: null })
+      return true
+    }
+    return false
+  }
+
+  makeFighters(a) {
+    const { front } = a
+    const r = this.lots[a.lot].road
+    const lat = front.lat + r.side * (front.hw + 0.4) // on the pavement side of the cars, next to the lot
+    const hitAt = front.t - front.dir * front.hl // where the bumpers met
+    a.axis = r.axis
+    a.fighters = [0, 1].map((j) => {
+      const p = makePerson(this.rng)
+      p.scale.setScalar(0.001)
+      this.world.add(p)
+      // the driver of the rear car stands behind the meeting point and faces forward, the other the other way round
+      return { p, j, toward: (j === 0 ? 1 : -1) * front.dir, along: hitAt + (j === 0 ? -1 : 1) * front.dir * 0.28, lat }
+    })
+  }
+
+  updateCrashes(dt) {
+    for (let i = this.crashes.length - 1; i >= 0; i--) {
+      const a = this.crashes[i]
+      a.t += dt
+      const lostCar = !a.front.active || !a.rear.active
+      if (a.phase === 'bump') {
+        if (lostCar || a.t > 15) { endCrash(a.front, a.rear); this.crashes.splice(i, 1); continue }
+        if (a.rear.crash && a.rear.crash.hit) { a.phase = 'fight'; a.t = 0; this.makeFighters(a) }
+        continue
+      }
+      const spent = (this.odds[a.lot] || { spent: 0 }).spent
+      if (a.phase === 'fight' && !fightGoesOn(spent)) { a.phase = 'leave'; a.t = 0 }
+      const scale = a.phase === 'leave' ? Math.max(0.001, 1 - a.t / 0.7) : Math.min(1, a.t / 0.6 + 0.001)
+      for (const f of a.fighters) {
+        const u = f.p.userData
+        const t = this.clock.elapsedTime
+        const lunge = Math.max(0, Math.sin(t * 9 + f.j * 3.1)) * 0.08 * f.toward // steps in with each punch
+        const x = a.axis === 'x' ? f.along + lunge : f.lat
+        const z = a.axis === 'x' ? f.lat : f.along + lunge
+        f.p.position.set(x, 0.1 + Math.abs(Math.sin(t * 7 + f.j)) * 0.05, z)
+        f.p.rotation.y = a.axis === 'x' ? (f.toward > 0 ? Math.PI / 2 : -Math.PI / 2) : (f.toward > 0 ? 0 : Math.PI)
+        f.p.rotation.z = Math.sin(t * 8 + f.j) * 0.15
+        u.arms[0].rotation.x = -1.5 + Math.sin(t * 13 + f.j) * 0.9
+        u.arms[1].rotation.x = -1.5 + Math.sin(t * 13 + f.j + Math.PI) * 0.9
+        f.p.scale.setScalar(1.05 * scale)
+      }
+      if (a.phase === 'leave' && a.t >= 0.7) {
+        for (const f of a.fighters) this.disposePart(f.p)
+        endCrash(a.front, a.rear)
+        this.crashes.splice(i, 1)
+      }
+    }
+    this.crashClock += dt
+    if (this.crashClock >= 1) { this.crashClock = 0; this.maybeCrash() }
+  }
+
   buildWalkers() {
     const rng = this.rng
     const P = this.T.people
@@ -854,6 +963,9 @@ export class CityScene {
     this.spinners = []
     this.felling = []
     this.growing = []
+    this.crashes = []
+    this.crashClock = 0
+    this.odds = []
     this.E = HALF[this.ring2 ? 1 : 0]
     this.traffic = makeTraffic(this.E - 15)
     this.rng = mulberry(7)
@@ -920,6 +1032,7 @@ export class CityScene {
     this.lots.forEach((lot, i) => {
       const c = list[i] || null
       lot.county = c
+      this.odds[i] = c ? { spent: c.spent || 0, group: c.group, level: c.level || 0 } : null
       lot.pick.userData.countyId = c ? c.id : null
       if (!c) {
         lot.border.material.color.set(this.T.c.empty)
@@ -1231,6 +1344,8 @@ export class CityScene {
     const camDist = this.camera.position.distanceTo(this.controls.target)
     if (this.scene.fog) { this.scene.fog.near = camDist - 14 * (this.E / 15); this.scene.fog.far = camDist + 70 * (this.E / 15) }
     this.updateTrees(dt)
+    this.updateRoads(dt)
+    this.updateCrashes(dt)
     for (const lot of this.lots) {
       // one step at a time until it reaches the target level
       const want = stageSize(lot)
@@ -1321,6 +1436,7 @@ export class CityScene {
         c.car.position.set(c.lat, vy, c.t)
         c.car.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
       }
+      if (c.crash && c.crash.hit) c.car.rotation.y += c.crash.role === 'front' ? 0.1 : -0.1 // the cars sit a little crooked after the bump
     }
     for (const sp of this.spinners) sp.rotation.z += dt * 0.25
     // particles

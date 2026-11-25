@@ -52,6 +52,7 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
       onViewChanged: (m) => setMoved(m),
     })
     scene.current = sc
+    if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) window.__scene = sc // lets a preview start a crash by hand
     if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_HOOK) window.__scene = sc // test hook, never in release builds
     return () => { sc.dispose(); scene.current = null }
   }, [])

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, crashGap } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -288,4 +288,88 @@ describe('traffic: things still get done', () => {
     }
     expect(passes).toBeGreaterThan(0)
   }, 120000)
+})
+
+describe('traffic: a staged accident', () => {
+  const crashSetup = () => {
+    const rng = seeded(5)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    // two cars one behind the other in the same lane, well away from the crossroad
+    const [front, rear, ...rest] = cars
+    const drive = (c, t) => Object.assign(c, { active: true, axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t, base: 2.4, speed: 2.4, passing: null, still: 0 })
+    drive(front, 9)
+    drive(rear, 5.6)
+    return { cars, rest, tr, walkers, front, rear, rng }
+  }
+  const run = (s, seconds, dt = 1 / 30, each = () => {}) => {
+    for (let i = 0; i < seconds / dt; i++) { stepTraffic(s.cars, s.walkers, s.tr, dt); each(i * dt) }
+  }
+
+  it('the rear car runs up to the front one, stops with the bumpers almost touching, and they do not overlap', () => {
+    const s = crashSetup()
+    startCrash(s.front, s.rear)
+    let overlap = false
+    run(s, 8, 1 / 30, () => { if (crashGap(s.rear, s.front) < -0.001) overlap = true })
+    expect(s.rear.crash.hit).toBe(true)
+    expect(s.front.speed).toBe(0)
+    expect(s.rear.speed).toBe(0)
+    const gap = crashGap(s.rear, s.front)
+    expect(gap).toBeGreaterThan(0)
+    expect(gap).toBeLessThan(0.08)
+    expect(overlap).toBe(false)
+  })
+
+  it('both cars stay where they are for as long as the crash lasts (they are not cleared away as idle)', () => {
+    const s = crashSetup()
+    startCrash(s.front, s.rear)
+    run(s, 6)
+    const at = [s.front.t, s.rear.t]
+    run(s, 60)
+    expect(s.front.active && s.rear.active).toBe(true)
+    expect([s.front.t, s.rear.t]).toEqual(at)
+  })
+
+  it('other cars drive around the wreck or wait behind it, and never run into it', () => {
+    for (const seed of [1, 2, 3]) {
+      const s = crashSetup()
+      s.rng = seeded(seed)
+      startCrash(s.front, s.rear)
+      let bad = 0
+      for (let i = 0; i < 90 / (1 / 30); i++) {
+        if (i % 60 === 0) spawnCar(s.cars, s.rng)
+        stepTraffic(s.cars, s.walkers, s.tr, 1 / 30)
+        for (const c of s.cars) {
+          if (!c.active || c === s.front || c === s.rear) continue
+          for (const w of [s.front, s.rear]) {
+            const a = { x: [c.t - c.hl, c.t + c.hl], z: [c.lat - c.hw, c.lat + c.hw] }
+            const b = { x: [w.t - w.hl, w.t + w.hl], z: [w.lat - w.hw, w.lat + w.hw] }
+            if (c.axis === 'x' && hit(a, b)) bad++
+          }
+        }
+      }
+      expect(bad).toBe(0)
+    }
+  }, 60000)
+
+  it('when the crash is cleared both cars drive on', () => {
+    const s = crashSetup()
+    startCrash(s.front, s.rear)
+    run(s, 6)
+    endCrash(s.front, s.rear)
+    expect(s.front.crash).toBeNull()
+    expect(s.rear.crash).toBeNull()
+    const before = s.front.t
+    run(s, 4)
+    expect(s.front.t).toBeGreaterThan(before + 1)
+  })
+
+  it('a wreck does not hold up the traffic light', () => {
+    const s = crashSetup()
+    startCrash(s.front, s.rear)
+    run(s, 20)
+    expect(s.tr.busy.x + s.tr.busy.z).toBeGreaterThanOrEqual(0)
+    expect(s.tr.sig.mode).toBeTruthy()
+  })
 })

@@ -31,8 +31,48 @@ const SPACING = [0.528, 1.1] // how far the second lane is from the first: least
 export const LANES = [INNER, INNER + SPACING[0]]
 
 export const newCar = (hl, hw) => ({
-  active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0,
+  active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0, crash: null,
 })
+
+// ---------- a staged accident ----------
+// the car behind drives up to the one in front until the bumpers touch (never through it), and both stay put until the crash is cleared.
+// everybody else drives around them, or waits, like behind any slow car.
+export function startCrash(front, rear) {
+  front.crash = { role: 'front', other: rear, hit: false }
+  rear.crash = { role: 'rear', other: front, hit: false }
+  front.passing = rear.passing = null
+}
+
+export function endCrash(a, b) {
+  for (const c of [a, b]) { c.crash = null; c.still = 0 }
+}
+
+// the space between the rear car's nose and the front car's tail (0 means touching)
+export const crashGap = (rear, front) => (front.t - rear.t) * rear.dir - rear.hl - front.hl
+
+const TOUCH = 0.03 // the little space left between two cars that have bumped
+
+function stepCrash(c, dt) {
+  const k = c.crash
+  if (k.role === 'front') {
+    c.speed = Math.max(0, c.speed - 14 * dt) // brakes hard
+  } else if (!k.hit) {
+    const gap = crashGap(c, k.other)
+    if (gap <= TOUCH + 0.01) {
+      c.speed = 0
+      c.t = k.other.t - c.dir * (c.hl + k.other.hl + TOUCH)
+      k.hit = k.other.crash.hit = true
+      k.other.speed = 0
+    } else {
+      const target = Math.min(2.4, Math.max(0.45, gap * 2)) // slows down as it gets close
+      c.speed += (target - c.speed) * Math.min(1, 6 * dt)
+    }
+  } else {
+    c.speed = 0
+  }
+  c.t += c.dir * c.speed * dt
+  c.still = 0 // a wreck is not an idle car: it is not cleared away
+}
 
 // how much longer the roads are than in the 12 county city (the city grows a second ring when there are more counties)
 let reach = 0
@@ -149,7 +189,7 @@ const committed = (c) => toLine(c) >= 0 && toLine(c) < (c.speed * c.speed) / (2 
 function updateSignal(cars, walkers, tr, dt) {
   const busy = { x: 0, z: 0 }, want = { x: false, z: false }
   for (const c of cars) {
-    if (!c.active) continue
+    if (!c.active || c.crash) continue // a wreck does not count as somebody waiting or crossing
     if (inCrossroad(c) || committed(c)) busy[c.axis]++
     else if (toLine(c) >= 0 && toLine(c) < 12) want[c.axis] = true
   }
@@ -179,6 +219,7 @@ function updateSignal(cars, walkers, tr, dt) {
 const greenFor = (sig, axis) => sig.mode === 'green' && sig.axis === axis
 
 function stepCar(c, cars, walkers, tr, dt) {
+  if (c.crash) { stepCrash(c, dt); return }
   const sig = tr.sig
   updatePass(c, cars, CAR, (plan) => {
     const onCrossroad = plan.end > -STOP - 0.3 && plan.start < BOX + 0.3
