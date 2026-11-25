@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, crashGap } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, crashGap, carPose } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -15,7 +15,7 @@ const FLEETS = {
   japan: '2.55x0.59 0.57x0.37 0.57x0.37 0.57x0.37 0.57x0.37 0.68x0.38 0.68x0.38 0.88x0.4 0.57x0.37 2.55x0.59',
   ice: '1.9x0.45 1.52x0.36 2.09x0.5 1.05x0.21 1.05x0.21 1.45x0.35 1.45x0.35 1.14x0.27',
   war: '0.7x0.46 0.7x0.46 0.88x0.38 0.88x0.38 1.15x0.53 0.55x0.15 0.55x0.15 1.45x0.44 0.88x0.38',
-  ocean: '1.09x0.53 1.09x0.53 1.05x0.22 0.84x0.18 0.73x0.15 0.95x0.2 1.58x0.33 0.84x0.18',
+  ocean: '1.09x0.53 1.09x0.53 1.09x0.53 1.09x0.53 1.09x0.53 1.09x0.53 1.09x0.53 1.09x0.53', // eight submarines
   court: '0.47x0.45 0.47x0.45 0.47x0.45 1.51x0.49 1.51x0.49 0.68x0.38 0.47x0.45',
 }
 const fleet = (name) => FLEETS[name].split(' ').map((s) => newCar(...s.split('x').map(Number)))
@@ -26,6 +26,21 @@ const box = (m) => {
   return m.axis === 'x' ? { x: along, z: across } : { x: across, z: along }
 }
 const hit = (a, b) => a.x[0] < b.x[1] && b.x[0] < a.x[1] && a.z[0] < b.z[1] && b.z[0] < a.z[1]
+
+// the real shape of a car or person on the ground (a rectangle pointing the way it faces, so a car in the middle of a turn is measured properly)
+const rectOf = (m) => {
+  if (m.id !== undefined) return m.axis === 'x' ? { x: m.t, z: m.lat, hx: 1, hz: 0, hl: m.hl, hw: m.hw } : { x: m.lat, z: m.t, hx: 0, hz: 1, hl: m.hl, hw: m.hw }
+  const p = carPose(m)
+  return { x: p.x, z: p.z, hx: p.hx, hz: p.hz, hl: m.hl, hw: m.hw }
+}
+const overlap = (a, b) => {
+  const dx = b.x - a.x, dz = b.z - a.z
+  for (const [ux, uz] of [[a.hx, a.hz], [-a.hz, a.hx], [b.hx, b.hz], [-b.hz, b.hx]]) {
+    const r = (m) => m.hl * Math.abs(m.hx * ux + m.hz * uz) + m.hw * Math.abs(-m.hz * ux + m.hx * uz)
+    if (Math.abs(dx * ux + dz * uz) >= r(a) + r(b)) return false // there is a line between them
+  }
+  return true
+}
 
 // the eight lots that touch a footpath, with a size each (1 = fully grown, LOT_SMALL = first stage)
 // the 12 more lots of the big city (24 counties): the old park corner and two more along the roads, in every corner
@@ -84,7 +99,7 @@ function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
     const all = [...cars.filter((c) => c.active), ...walkers]
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
-        if (hit(box(all[i]), box(all[j]))) {
+        if (overlap(rectOf(all[i]), rectOf(all[j]))) {
           const kind = (m) => (m.id !== undefined ? 'person' : 'car')
           out.crashes.push(`${name} seed ${seed} at ${(step * dt).toFixed(1)}s: ${kind(all[i])} ${all[i].axis}${all[i].dir > 0 ? '+' : '-'} hits ${kind(all[j])} ${all[j].axis}${all[j].dir > 0 ? '+' : '-'}`)
           if (out.crashes.length > 3) return out
@@ -267,7 +282,7 @@ describe('traffic: the signal', () => {
 
   it('cars wait at the light, but not most of the time', () => {
     const r = simulate('city', 11, 10, 1 / 30)
-    expect(r.carsWaiting / r.carTime).toBeLessThan(0.5)
+    expect(r.carsWaiting / r.carTime).toBeLessThan(0.65) // single lane roads: a car waiting for its left arrow holds up the ones behind it
   }, 60000)
 })
 
@@ -343,9 +358,7 @@ describe('traffic: a staged accident', () => {
         for (const c of s.cars) {
           if (!c.active || c === s.front || c === s.rear) continue
           for (const w of [s.front, s.rear]) {
-            const a = { x: [c.t - c.hl, c.t + c.hl], z: [c.lat - c.hw, c.lat + c.hw] }
-            const b = { x: [w.t - w.hl, w.t + w.hl], z: [w.lat - w.hw, w.lat + w.hw] }
-            if (c.axis === 'x' && hit(a, b)) bad++
+            if (overlap(rectOf(c), rectOf(w))) bad++
           }
         }
       }
@@ -371,5 +384,77 @@ describe('traffic: a staged accident', () => {
     run(s, 20)
     expect(s.tr.busy.x + s.tr.busy.z).toBeGreaterThanOrEqual(0)
     expect(s.tr.sig.mode).toBeTruthy()
+  })
+})
+
+describe('traffic: turning at the crossroad', () => {
+  const run = (name, seed, minutes, each) => {
+    const rng = seeded(seed)
+    const cars = fleet(name)
+    const walkers = placeWalkers(8, rng)
+    const tr = makeTraffic()
+    for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
+    let spawnIn = 0.4
+    const dt = 1 / 30
+    for (let step = 0; step < (minutes * 60) / dt; step++) {
+      spawnIn -= dt
+      if (spawnIn <= 0) { spawnIn = 1.8 + rng() * 2.6; spawnCar(cars, rng) }
+      const before = cars.map((c) => ({ turn: c.turn, axis: c.axis, dir: c.dir, arc: !!c.arc, active: c.active }))
+      stepTraffic(cars, walkers, tr, dt)
+      each(cars, before, tr)
+    }
+  }
+
+  it('cars turn right and left, and come out on the other road, heading the right way, in the right lane', () => {
+    const seen = { right: 0, left: 0 }
+    const bad = []
+    run('city', 4, 8, (cars, before) => {
+      cars.forEach((c, i) => {
+        const b = before[i]
+        if (!b.arc || c.arc || !c.active) return // just finished a curve
+        seen[b.turn]++
+        const side = b.turn === 'right' ? 1 : -1 // x+ right goes to z+, x+ left to z-; z+ right goes to x-, z+ left to x+
+        const dir = b.axis === 'x' ? b.dir * side : -b.dir * side
+        const lane = c.axis === 'x' ? (dir > 0 ? 0.75 : -0.75) : (dir > 0 ? -0.75 : 0.75)
+        if (c.axis === b.axis || c.dir !== dir || c.lane !== lane || c.lat !== lane || c.turn !== 'straight') bad.push(`${b.turn} from ${b.axis}${b.dir > 0 ? '+' : '-'} came out as ${c.axis}${c.dir > 0 ? '+' : '-'} lane ${c.lane}`)
+      })
+    })
+    expect(bad).toEqual([])
+    expect(seen.right).toBeGreaterThan(5)
+    expect(seen.left).toBeGreaterThan(2)
+  }, 60000)
+
+  it('a left turn only ever starts on its own arrow, never on the plain green', () => {
+    let starts = 0
+    const bad = []
+    run('city', 5, 8, (cars, before, tr) => {
+      cars.forEach((c, i) => {
+        if (before[i].arc || !c.arc || c.turn !== 'left') return
+        starts++
+        const own = c.axis + 'l' + (c.dir > 0 ? '+' : '-')
+        if (tr.sig.phase !== own) bad.push(`left turn from ${c.axis}${c.dir > 0 ? '+' : '-'} started in phase ${tr.sig.phase}`)
+      })
+    })
+    expect(starts).toBeGreaterThan(2)
+    expect(bad).toEqual([])
+  }, 60000)
+
+  it('the light only shows one phase at a time, and a left arrow never comes together with the same road through green', () => {
+    const phases = new Set()
+    run('city', 6, 6, (cars, before, tr) => {
+      phases.add(tr.sig.phase)
+      if (tr.sig.left !== 0) expect(tr.sig.phase).toBe(tr.sig.axis + 'l' + (tr.sig.left > 0 ? '+' : '-'))
+      else expect(tr.sig.phase).toBe(tr.sig.axis)
+    })
+    expect([...phases].some((p) => p.includes('l'))).toBe(true) // the arrows really come up
+  }, 60000)
+
+  it('a long vehicle (a train) never turns, it does not fit round the corner', () => {
+    const rng = seeded(9)
+    const cars = fleet('japan')
+    for (let i = 0; i < 200; i++) {
+      const c = spawnCar(cars, rng)
+      if (c) { if (c.hl >= 1.8) expect(c.turn).toBe('straight'); c.active = false }
+    }
   })
 })

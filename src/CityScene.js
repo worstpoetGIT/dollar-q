@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
 import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS, brickAt, BRICKS_PER_FLOOR, BRICK_EVERY, BRICK_FLIGHT, PAINT_TIME } from './cityRules.js'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash } from './traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -631,9 +631,17 @@ export class CityScene {
         else mk(head, new THREE.SphereGeometry(0.085, 8, 6), m, 0.43, y, 0, false)
         return m
       })
+      // the two arrows under the lamps: left and right as the driver sees them (the head looks along +x, the driver looks back along -x, so his left is +z)
+      bx(head, 0.22, 0.4, 0.38, S.head, 0.3, 1.18, 0)
+      const arrow = (side) => {
+        const m = new THREE.MeshBasicMaterial({ color: ARROW_OFF })
+        mk(head, new THREE.ConeGeometry(0.08, 0.2, 3), m, 0.43, 1.38, side * 0.095, false).rotation.x = side * (Math.PI / 2)
+        return m
+      }
+      const left = arrow(1), right = arrow(-1)
       head.rotation.y = face
       g.add(head)
-      this.signals.push({ axis, mats })
+      this.signals.push({ axis, dir: face === 0 ? -1 : face === Math.PI ? 1 : face === -Math.PI / 2 ? -1 : 1, mats, left, right })
     }
     g.position.set(0, 0.07, 0)
     this.world.add(g)
@@ -643,12 +651,17 @@ export class CityScene {
   // red on top, yellow, green below: light up the one that is on
   paintSignals() {
     const sig = this.traffic.sig
-    const key = sig.axis + sig.mode
+    const key = sig.phase + sig.mode
     if (key === this.signalKey) return
     this.signalKey = key
+    const shade = sig.mode === 'yellow' ? 1 : 2 // which lamp colour is lit when this road has its turn
     for (const h of this.signals) {
-      const on = h.axis !== sig.axis || sig.mode === 'red' ? 0 : sig.mode === 'yellow' ? 1 : 2
+      const through = sig.left === 0 && h.axis === sig.axis && sig.mode !== 'red' // the round lamps only show green or yellow in a road's through phase
+      const on = through ? shade : 0
       h.mats.forEach((m, i) => m.color.setHex(i === on ? LIT[i] : OFF[i]))
+      const mine = sig.left === h.dir && h.axis === sig.axis && sig.mode !== 'red' // this head's left arrow has its own phase
+      h.left.color.setHex(mine ? (sig.mode === 'yellow' ? LIT[1] : LIT[2]) : ARROW_OFF)
+      h.right.color.setHex(through ? (sig.mode === 'yellow' ? LIT[1] : LIT[2]) : ARROW_OFF) // a right turn goes with the through light
     }
   }
 
@@ -1643,13 +1656,9 @@ export class CityScene {
       const ud = c.car.userData
       const vy = (ud.y ?? 0.08) + (ud.bob ? Math.sin(t * 2.2 + c.ph) * ud.bob : 0)
       if (ud.spin) ud.spin.rotation.z -= (c.speed * dt) / ud.r
-      if (c.axis === 'x') {
-        c.car.position.set(c.t, vy, c.lat)
-        c.car.rotation.y = c.dir > 0 ? 0 : Math.PI
-      } else {
-        c.car.position.set(c.lat, vy, c.t)
-        c.car.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2
-      }
+      const pose = carPose(c) // also right in the middle of a turn
+      c.car.position.set(pose.x, vy, pose.z)
+      c.car.rotation.y = Math.atan2(-pose.hz, pose.hx)
       if (c.crash && c.crash.hit) c.car.rotation.y += c.crash.role === 'front' ? 0.1 : -0.1 // the cars sit a little crooked after the bump
     }
     for (const sp of this.spinners) sp.rotation.z += dt * 0.25
@@ -1714,3 +1723,4 @@ const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 // traffic light colours: red, yellow, green, lit and switched off
 const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]
 const OFF = [0x3a0d0d, 0x3a2e00, 0x0d3a1a]
+const ARROW_OFF = 0x1b2a20

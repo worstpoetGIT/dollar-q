@@ -32,7 +32,17 @@ export const LANES = [INNER, INNER + SPACING[0]]
 
 export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0, crash: null,
+  turn: 'straight', arc: null, // at the crossroad a car goes straight on, or turns left or right (arc: the curve it is on while it turns)
 })
+
+const LANE = 0.75 // how far a lane is from the middle of the road
+const TURN_SPEED = { right: 1.5, left: 1.9 } // how fast a car takes its curve
+
+// where a car is on the ground and which way it points (a heading vector), also while it is turning
+export function carPose(c) {
+  if (c.arc) return { x: c.arc.x, z: c.arc.z, hx: c.arc.hx, hz: c.arc.hz }
+  return c.axis === 'x' ? { x: c.t, z: c.lat, hx: c.dir, hz: 0 } : { x: c.lat, z: c.t, hx: 0, hz: c.dir }
+}
 
 // ---------- a staged accident ----------
 // the car behind drives up to the one in front until the bumpers touch (never through it), and both stay put until the crash is cleared.
@@ -84,7 +94,7 @@ const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in
 // the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
 export function makeTraffic(extra = 0) {
   reach = extra
-  return { sig: { axis: 'x', mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [] }
+  return { sig: { phase: 'x', axis: 'x', left: 0, mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [] }
 }
 
 // ---------- shared by cars and people ----------
@@ -162,17 +172,22 @@ function slide(m, movers, cfg, dt) {
   const step = cfg.shift * dt
   const want = m.goal - m.lat
   const next = Math.abs(want) < 1e-4 ? m.lat : m.lat + Math.max(-step, Math.min(step, want))
-  for (const o of movers) {
-    if (o === m || !o.active || o.road !== m.road || Math.abs(o.t - m.t) >= m.hl + o.hl + (cfg.squeeze ? 0.5 : 0.1)) continue // somebody beside me, or about to be
-    if (cfg.squeeze) {
-      const d = m.lat - o.lat
-      if (Math.abs(next - o.lat) < cfg.squeeze && Math.abs(d) > 1e-3) {
-        const lo = Math.min(m.lane, m.alt), hi = Math.max(m.lane, m.alt)
-        m.lat = Math.max(lo, Math.min(hi, m.lat + Math.sign(d) * step))
-        return
-      }
-    } else if (Math.abs(o.lat - next) < m.hw + o.hw + cfg.side) return
+  const near = (o) => o !== m && o.active && o.road === m.road && Math.abs(o.t - m.t) < m.hl + o.hl + (cfg.squeeze ? 0.5 : 0.1) // somebody beside me, or about to be
+  if (cfg.squeeze) {
+    // people: back away from whoever is too close sideways, and never move closer to anybody who already is (two on either side must not both push me)
+    const beside = movers.filter((o) => near(o) && Math.abs(m.lat - o.lat) >= 0.15) // the same lane one behind the other is followLimit's job
+    let to = next
+    for (const o of beside) {
+      if (Math.abs(to - o.lat) >= cfg.squeeze) continue
+      const lo = Math.min(m.lane, m.alt, m.lat), hi = Math.max(m.lane, m.alt, m.lat) // never snap towards somebody (the lane may have just moved in)
+      to = Math.max(lo, Math.min(hi, m.lat + Math.sign(m.lat - o.lat) * step))
+      break
+    }
+    for (const o of beside) if (Math.abs(to - o.lat) < cfg.squeeze && Math.abs(to - o.lat) < Math.abs(m.lat - o.lat)) { to = m.lat; break }
+    m.lat = to
+    return
   }
+  for (const o of movers) if (near(o) && Math.abs(o.lat - next) < m.hw + o.hw + cfg.side) return
   m.lat = next
 }
 
@@ -184,31 +199,58 @@ const toLine = (c) => -STOP - (pos(c) + c.hl) // how far the nose is from the st
 const inCrossroad = (c) => toLine(c) < 0 && pos(c) - c.hl < BOX + 0.15
 const committed = (c) => toLine(c) >= 0 && toLine(c) < (c.speed * c.speed) / (2 * CAR.hard) + 0.1 // too close to stop even with the brakes on full
 
-// the signal: green for one road at a time. it only changes when somebody is waiting on the other road,
-// and only once the crossroad is empty (nobody is in it, nobody is too close to stop).
+// the signal has phases. a road's "through" phase lets straight cars, right turns and walking people go. a left turn gets an arrow of its own,
+// one direction at a time, so a car turning left never crosses anybody coming the other way. the phases come round in this order, and ones
+// nobody is waiting for are skipped. it only changes once the crossroad is empty (nobody is in it, nobody is too close to stop).
+const PHASES = [
+  { id: 'x', axis: 'x', left: 0 }, { id: 'xl+', axis: 'x', left: 1 }, { id: 'xl-', axis: 'x', left: -1 },
+  { id: 'z', axis: 'z', left: 0 }, { id: 'zl+', axis: 'z', left: 1 }, { id: 'zl-', axis: 'z', left: -1 },
+]
+const LEFT_GREEN = 2.4 // seconds a left arrow stays on if somebody else is waiting
+const LEFT_YELLOW = 1.3
+const leftKey = (axis, dir) => axis + (dir > 0 ? '+' : '-')
+
 function updateSignal(cars, walkers, tr, dt) {
-  const busy = { x: 0, z: 0 }, want = { x: false, z: false }
+  const busy = { x: 0, z: 0 }, want = { x: false, z: false }, wantLeft = { 'x+': false, 'x-': false, 'z+': false, 'z-': false }
   for (const c of cars) {
     if (!c.active || c.crash) continue // a wreck does not count as somebody waiting or crossing
     if (inCrossroad(c) || committed(c)) busy[c.axis]++
-    else if (toLine(c) >= 0 && toLine(c) < 12) want[c.axis] = true
+    else if (toLine(c) >= 0 && toLine(c) < 12) {
+      if (c.turn === 'left') {
+        // only the one at the head of its lane can use the arrow (the cars in front of it would be stuck at the red anyway)
+        const head = !cars.some((o) => o !== c && o.active && !o.crash && o.axis === c.axis && o.dir === c.dir && Math.abs(o.lat - c.lat) < 0.4 && toLine(o) >= 0 && toLine(o) < toLine(c))
+        if (head) wantLeft[leftKey(c.axis, c.dir)] = true
+        else want[c.axis] = true // it waits for the through green like everybody else, and the straight cars ahead of it need that too
+      } else want[c.axis] = true
+    }
   }
   for (const w of walkers) {
     if (w.inPlaza) busy[w.axis]++
     else if (w.waiting) want[w.axis] = true
   }
   const sig = tr.sig
-  const o = other(sig.axis)
+  const demand = (p) => (p.left ? wantLeft[leftKey(p.axis, p.left)] : want[p.axis])
+  const here = PHASES.findIndex((p) => p.id === sig.phase)
+  const elsewhere = PHASES.some((p, i) => i !== here && demand(p))
   sig.age += dt
   if (sig.hold && (!sig.hold.active || !sig.hold.passing)) sig.hold = null
   if (sig.hold) sig.mode = 'green' // somebody is overtaking through the crossroad, nobody else goes now
   else if (sig.mode === 'green') {
-    if (want[o] && !want[sig.axis] && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // nobody on this road, hand over soon
-    else if (want[o] && sig.age >= GREEN) { sig.mode = 'yellow'; sig.age = 0 }
+    const limit = PHASES[here].left ? LEFT_GREEN : GREEN
+    if (elsewhere && !demand(PHASES[here]) && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // nobody here, hand over soon
+    else if (elsewhere && sig.age >= limit) { sig.mode = 'yellow'; sig.age = 0 }
   } else if (sig.mode === 'yellow') {
-    if (sig.age >= YELLOW && !busy[sig.axis]) { sig.mode = 'red'; sig.age = 0 }
+    if (sig.age >= (sig.left ? LEFT_YELLOW : YELLOW) && !busy[sig.axis]) { sig.mode = 'red'; sig.age = 0 }
   } else if (sig.age >= 0.6) {
-    sig.axis = o
+    let next = (here + 1) % PHASES.length
+    for (let k = 1; k <= PHASES.length; k++) {
+      const i = (here + k) % PHASES.length
+      if (demand(PHASES[i])) { next = i; break }
+    }
+    const p = PHASES[next]
+    sig.phase = p.id
+    sig.axis = p.axis
+    sig.left = p.left
     sig.mode = 'green'
     sig.age = 0
   }
@@ -216,16 +258,137 @@ function updateSignal(cars, walkers, tr, dt) {
   tr.want = want
 }
 
-const greenFor = (sig, axis) => sig.mode === 'green' && sig.axis === axis
+// may this car go now? a left turn needs the arrow for its direction, everybody else needs the road's through phase
+const allows = (sig, c) => sig.mode === 'green' && sig.phase === (c.turn === 'left' ? c.axis + 'l' + (c.dir > 0 ? '+' : '-') : c.axis)
+const walkersGo = (sig, axis) => sig.mode === 'green' && sig.phase === axis // people only cross in a through phase
+
+// ---------- turning ----------
+
+// the curve through the crossroad: from where the car's middle is at the edge of the crossroad, to where it leaves on the other road.
+// right is a small curve, left a wide one (it has to cross). a0 and a1 are the two directions from the centre of the curve, so the
+// car is at centre + a0 cos(t) + a1 sin(t) for t from 0 to a quarter turn.
+function turnArc(c) {
+  const h = c.axis === 'x' ? [c.dir, 0] : [0, c.dir]
+  const start = c.axis === 'x' ? [-c.dir * BOX, c.lat] : [c.lat, -c.dir * BOX]
+  const side = c.turn === 'right' ? [-h[1], h[0]] : [h[1], -h[0]] // the way the car turns
+  const R = c.turn === 'right' ? BOX - LANE : BOX + LANE
+  const centre = [start[0] + side[0] * R, start[1] + side[1] * R]
+  const newAxis = c.axis === 'x' ? 'z' : 'x'
+  const dir2 = newAxis === 'z' ? side[1] : side[0]
+  return {
+    kind: c.turn, centre, R, a0: [start[0] - centre[0], start[1] - centre[1]], a1: [h[0] * R, h[1] * R], len: (R * Math.PI) / 2, s: 0,
+    newAxis, dir2, lat2: newAxis === 'x' ? dir2 * LANE : -dir2 * LANE, x: start[0], z: start[1], hx: h[0], hz: h[1],
+  }
+}
+
+// where on the curve a car is after driving s along it
+function arcPoint(a, s) {
+  const f = Math.min(s / a.R, Math.PI / 2)
+  const cs = Math.cos(f), sn = Math.sin(f)
+  const hx = -a.a0[0] * sn + a.a1[0] * cs, hz = -a.a0[1] * sn + a.a1[1] * cs
+  const n = Math.hypot(hx, hz) || 1
+  return { x: a.centre[0] + a.a0[0] * cs + a.a1[0] * sn, z: a.centre[1] + a.a0[1] * cs + a.a1[1] * sn, hx: hx / n, hz: hz / n }
+}
+
+function placeOnArc(c) {
+  const a = c.arc
+  Object.assign(a, arcPoint(a, a.s))
+  c.t = c.axis === 'x' ? a.x : a.z // the others see the turning car at this spot of the road it came from, in its lane
+}
+
+// the real shape of a car on the ground: a rectangle that points where it faces (grown forward by 'more', and sideways by 'wide')
+function rectOf(c, more = 0, wide = 0) {
+  const p = carPose(c), h = more / 2
+  return { x: p.x + p.hx * h, z: p.z + p.hz * h, hx: p.hx, hz: p.hz, hl: c.hl + h, hw: c.hw + wide }
+}
+export function rectsTouch(a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z
+  for (const [ux, uz] of [[a.hx, a.hz], [-a.hz, a.hx], [b.hx, b.hz], [-b.hz, b.hx]]) {
+    const r = (m) => m.hl * Math.abs(m.hx * ux + m.hz * uz) + m.hw * Math.abs(-m.hz * ux + m.hx * uz)
+    if (Math.abs(dx * ux + dz * uz) >= r(a) + r(b)) return false // there is a line between them
+  }
+  return true
+}
+
+// the box a person takes up on the ground, grown forward the way they are walking
+function walkerRect(w, more = 0, wide = 0) {
+  const h = (more / 2) * w.dir
+  return w.axis === 'x'
+    ? { x: w.t + h, z: w.lat, hx: 1, hz: 0, hl: w.hl + more / 2, hw: w.hw + wide }
+    : { x: w.lat, z: w.t + h, hx: 0, hz: 1, hl: w.hl + more / 2, hw: w.hw + wide }
+}
+
+// a long car swings its tail out when it turns, so before it starts the curve the whole swept area must be free,
+// also for the next two seconds of whoever is still coming (at the speed they have now)
+function sweepClear(c, cars, walkers, sig) {
+  const a = turnArc(c)
+  const speed = TURN_SPEED[a.kind]
+  for (let i = 0; i <= 18; i++) {
+    const s = (a.len * i) / 18
+    const mine = { ...arcPoint(a, s), hl: c.hl, hw: c.hw + 0.1 }
+    const by = s / speed + 0.5 // by the time i am at this spot, anybody coming has covered up to this much road
+    for (const o of cars) {
+      if (o === c || !o.active) continue
+      if (o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < 0.4 && o.t * c.dir < c.t * c.dir) continue // in my lane behind me: the curve never reaches it
+      let reach = 0.3
+      if (!o.arc && !o.crash && !(toLine(o) >= 0 && !allows(sig, o))) reach += Math.min(o.base * by, o.speed * by + 0.5 * CAR.accel * by * by) // it may speed up (unless a red holds it)
+      if (rectsTouch(mine, rectOf(o, reach, 0.08))) return false
+    }
+    for (const w of walkers) {
+      const holdsStill = w.waiting && !walkersGo(sig, w.axis) // somebody waiting at their red light is not going anywhere
+      if (rectsTouch(mine, walkerRect(w, holdsStill ? 0 : Math.max(w.speed, w.base) * by + 0.3, 0.1))) return false
+    }
+  }
+  return true
+}
+
+// may this car start its curve? room to swing, room on the road it turns into, and nobody walking across that road
+function turnOK(c, cars, walkers, sig) {
+  if (!sweepClear(c, cars, walkers, sig) || !exitFree(c, cars)) return false
+  const side = Math.sign(turnArc(c).dir2) // people crossing the road on the side i leave by (people who already started go first)
+  return !walkers.some((w) => w.axis === c.axis && Math.sign(w.lat) === side && w.inPlaza)
+}
+
+// is the road it turns into free just beyond the crossroad? (nobody in that lane close to the exit, and nobody else about to turn into it)
+function exitFree(c, cars) {
+  const a = c.arc || turnArc(c)
+  for (const o of cars) {
+    if (o === c || !o.active) continue
+    if (o.arc) { if (o.arc.newAxis === a.newAxis && o.arc.lat2 === a.lat2) return false; continue }
+    if (o.road !== a.newAxis || Math.abs(o.lat - a.lat2) > 0.5) continue
+    const d = (o.t - a.dir2 * BOX) * a.dir2 // how far past the exit its middle is
+    if (d > -o.hl && d < c.hl + o.hl + 2.2) return false
+  }
+  return true
+}
+
+function finishTurn(c) {
+  const a = c.arc
+  const over = Math.max(0, a.s - a.len)
+  Object.assign(c, { axis: a.newAxis, road: a.newAxis, dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.dir2 * (BOX + over), turn: 'straight', arc: null, passing: null, still: 0 })
+}
+
+function stepTurn(c, cars, dt) {
+  const a = c.arc
+  let lim = Math.min(c.base, TURN_SPEED[a.kind], followLimit(c, cars, CAR))
+  if (a.s > a.len * 0.4 && !exitFree(c, cars)) lim = 0 // stop inside rather than drive into somebody
+  c.speed = approach(c, lim, CAR, dt)
+  a.s += c.speed * dt
+  if (a.s >= a.len) { finishTurn(c); return }
+  placeOnArc(c)
+  c.still = 0
+}
 
 function stepCar(c, cars, walkers, tr, dt) {
   if (c.crash) { stepCrash(c, dt); return }
+  if (c.arc) { stepTurn(c, cars, dt); return }
   const sig = tr.sig
   updatePass(c, cars, CAR, (plan) => {
+    if (c.turn !== 'straight') return false // a car that is about to turn does not overtake
     const onCrossroad = plan.end > -STOP - 0.3 && plan.start < BOX + 0.3
     if (!onCrossroad) return true
     const o = other(c.axis)
-    if (sig.hold || !greenFor(sig, c.axis) || tr.busy[o]) return false
+    if (sig.hold || !allows(sig, c) || tr.busy[o]) return false
     sig.hold = c // the light stays green until i am back in my lane
     return true
   })
@@ -233,13 +396,20 @@ function stepCar(c, cars, walkers, tr, dt) {
   let lim = c.passing ? c.base * CAR.boost : c.base
   lim = Math.min(lim, followLimit(c, cars, CAR))
 
-  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || greenFor(sig, c.axis)
+  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || allows(sig, c)
+  const turnAt = -BOX - pos(c) // how far the middle of a turning car is from the start of its curve
+  const mayTurn = c.turn === 'straight' || turnAt > 4 || turnOK(c, cars, walkers, sig)
+  if (!mayTurn) lim = Math.min(lim, brake(Math.max(0, turnAt - 0.05), CAR.brake)) // wait for the room before the curve
+  for (const o of cars) { // somebody on the other road, or in a curve, is right in front of me (a car that stopped half over the crossroad): i wait
+    if (o === c || !o.active || (!o.arc && o.road === c.road)) continue
+    if (rectsTouch(rectOf(c, (c.speed * c.speed) / (2 * CAR.brake) + 0.6, 0.05), rectOf(o, 0, 0.05))) lim = 0
+  }
   if (!go) lim = Math.min(lim, brake(toLine(c) - 0.2, CAR.brake))
 
   for (const w of walkers) { // backup: if somebody is crossing my road anyway, stop for them
     if (!w.crossing || w.axis === c.axis) continue
     const at = c.dir * w.lat
-    if (pos(c) - c.hl > at + 0.4) continue
+    if (pos(c) - c.hl > at + 0.4 || pos(c) + c.hl > at - 0.4) continue // already past them, or already over their crossing: keep going and clear it
     lim = Math.min(lim, brake(at - 0.4 - (pos(c) + c.hl) - 0.5, CAR.brake))
   }
 
@@ -247,6 +417,9 @@ function stepCar(c, cars, walkers, tr, dt) {
   slide(c, cars, CAR, dt)
   c.t += c.dir * c.speed * dt
   c.still = c.speed < 0.03 ? c.still + dt : 0
+  if (c.turn !== 'straight' && pos(c) >= -BOX) { // its middle is at the edge of the crossroad: into the curve
+    if (mayTurn) { c.arc = turnArc(c); placeOnArc(c) } else { c.t = -c.dir * BOX - c.dir * 0.01; c.speed = 0 }
+  }
   if (pos(c) - c.hl > CAR.edge + reach || c.still > 25) { c.active = false; c.passing = null }
 }
 
@@ -270,14 +443,18 @@ export function spawnCar(cars, rng, anywhere = false) {
   const lane = rng() > 0.5 ? 0.75 : -0.75
   const dir = axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1)
   let p = -(CAR.edge + reach + c.hl)
+  let passed = false // already through the crossroad: it can only go straight on
   if (anywhere) {
     const before = [-(CAR.far + reach - 1), -(STOP + 0.4 + c.hl)] // between the end of the road and the stop line
     const after = [BOX + 0.4 + c.hl, CAR.far + reach - 1 - c.hl]
-    const [a, b] = rng() > 0.5 ? before : after
+    passed = rng() > 0.5
+    const [a, b] = passed ? after : before
     if (b <= a) return null
     p = a + rng() * (b - a)
   }
-  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0 })
+  const r = rng()
+  const turn = passed || c.hl >= 1.8 || r < 0.7 ? 'straight' : r < 0.88 ? 'right' : 'left' // most go straight on, a few turn right, fewer turn left (a long train does not fit round the corner)
+  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null })
   c.speed = c.base
   if (!roomFor(c, cars)) { c.active = false; return null }
   return c
@@ -330,14 +507,26 @@ export function placeWalkers(n, rng) {
 }
 
 // people may step into the crossroad area only on green. before that they wait at the kerb, never on the road.
-function plazaLimit(w, sig) {
+// is a car in the way of this person's crossing? one that is turning into the road they cross, or one that is sitting where they would walk
+function carInTheWay(w, cars) {
+  const lane = { x: w.axis === 'x' ? 0 : w.lat, z: w.axis === 'x' ? w.lat : 0 }
+  const band = w.axis === 'x' ? { x: 0, z: lane.z, hx: 1, hz: 0, hl: BOX + 0.3, hw: 0.8 } : { x: lane.x, z: 0, hx: 0, hz: 1, hl: BOX + 0.3, hw: 0.8 }
+  for (const c of cars) {
+    if (!c.active) continue
+    if (c.arc && c.axis === w.axis) return true // it is turning into the road i want to cross
+    if (rectsTouch(rectOf(c, 0, 0.1), band)) return true
+  }
+  return false
+}
+
+function plazaLimit(w, sig, cars) {
   const lo = w.t - w.hl, hi = w.t + w.hl
   w.inPlaza = hi > -PLAZA && lo < PLAZA
   w.crossing = w.inPlaza
   w.waiting = false
   if (w.inPlaza) return w.base * WALK.boost // already on the way over, hurry a little
   const toEdge = w.dir > 0 ? -PLAZA - hi : lo - PLAZA
-  if (toEdge < 0 || toEdge > 1.5 || greenFor(sig, w.axis)) return Infinity
+  if (toEdge < 0 || toEdge > 1.5 || (walkersGo(sig, w.axis) && !carInTheWay(w, cars))) return Infinity
   w.waiting = true
   return brake(toEdge - 0.15, WALK.brake)
 }
@@ -351,11 +540,16 @@ function turnAround(w, lots) {
   setLane(w, lots)
 }
 
-function stepWalker(w, walkers, tr, dt) {
+function stepWalker(w, walkers, cars, tr, dt) {
   setLane(w, tr.lots)
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far + reach && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
-  lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig))
+  lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig, cars))
+  for (const c of cars) { // a car on my crossing (or sweeping round a curve): i hold still if it is about to reach me
+    if (!c.active) continue
+    const room = c.arc ? 0.1 : 0 // a curve sweeps wide so it gets a margin, a car just standing there does not (people walk right past it on the pavement)
+    if (rectsTouch(walkerRect(w, 1.2 + (w.speed * w.speed) / (2 * WALK.hard), room), rectOf(c, c.arc ? 0.3 : 0, room))) lim = 0
+  }
   w.speed = approach(w, lim, WALK, dt)
   slide(w, walkers, WALK, dt)
   w.t += w.dir * w.speed * dt
@@ -366,7 +560,7 @@ function stepWalker(w, walkers, tr, dt) {
 // ---------- one step for everybody ----------
 
 export function stepTraffic(cars, walkers, tr, dt) {
-  for (const w of walkers) stepWalker(w, walkers, tr, dt)
+  for (const w of walkers) stepWalker(w, walkers, cars, tr, dt)
   updateSignal(cars, walkers, tr, dt)
   for (const c of cars) if (c.active) stepCar(c, cars, walkers, tr, dt)
 }
