@@ -59,7 +59,16 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
   }, [])
 
   // where the money goes, judged over ten days: the only county where accidents and fights may happen
-  const assess = useMemo(() => assessSpending(s.expenses, s.counties, cur), [s.expenses, s.counties, cur])
+  // (a preview link with ?fights skips the ten days of waiting: the county with the most spending counts as the top one, so a fight can be seen right away)
+  const demoFights = typeof location !== 'undefined' && new URLSearchParams(location.search).has('fights')
+  const assess = useMemo(() => {
+    if (!demoFights) return assessSpending(s.expenses, s.counties, cur)
+    const spent = new Map()
+    for (const e of s.expenses) if (e.currency === cur) spent.set(e.countyId, (spent.get(e.countyId) || 0) + e.amount)
+    let top = null, best = 0
+    for (const c of s.counties) { const v = c.group === 'Gulliver' ? 0 : spent.get(c.id) || 0; if (v > best) { best = v; top = c.id } }
+    return { ready: true, top }
+  }, [s.expenses, s.counties, cur, demoFights])
   useEffect(() => { scene.current?.setCounties(list, assess) }, [list, assess])
   useEffect(() => { scene.current?.setMap(s.map) }, [s.map])
   useEffect(() => { scene.current?.setDark(dark) }, [dark])

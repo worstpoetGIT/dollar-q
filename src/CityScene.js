@@ -1018,12 +1018,14 @@ export class CityScene {
       const t = c.axis === 'x' ? f.at.x : f.at.z, lat = c.axis === 'x' ? f.at.z : f.at.x
       return { active: true, road: c.axis + Math.sign(lat), t, lat, goal: lat, hw: f.at.lying ? 0.45 : 0.3, hl: f.at.lying ? 0.75 : 0.32, dir: 0, speed: 0 }
     }))
+    if (!this.demoKick && this.assess && this.assess.ready && typeof location !== 'undefined' && new URLSearchParams(location.search).has('fights')) { this.demoKick = true; this.crashDue = true } // (a preview link with ?fights: the first accident is asked for at once)
     this.crashClock += dt
     if (this.crashClock >= 0.5) {
       this.crashClock = 0
       if (!this.crashDue) {
         const danger = this.crashWeights().reduce((a, b) => a + b, 0)
-        if (this.crashes.length < MAX_ACCIDENTS && this.rng() < accidentChance(danger, 0.5)) this.crashDue = true
+        const demo = typeof location !== 'undefined' && new URLSearchParams(location.search).has('fights') ? 6 : 1 // (a preview link with ?fights: accidents come much sooner)
+        if (this.crashes.length < MAX_ACCIDENTS && this.rng() < accidentChance(danger * demo, 0.5)) this.crashDue = true
       }
       if (this.crashDue && this.maybeCrash(true)) this.crashDue = false
     }
