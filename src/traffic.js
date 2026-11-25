@@ -32,60 +32,99 @@ export const LANES = [INNER, INNER + SPACING[0]]
 
 export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0, crash: null,
+  yaw: 0, stuck: 0, // yaw: how far off the road it points (only a car that lost control); stuck: seconds it has waited behind a wreck
   turn: 'straight', arc: null, // at the crossroad a car goes straight on, or turns left or right (arc: the curve it is on while it turns)
 })
 
 const LANE = 0.75 // how far a lane is from the middle of the road
-const TURN_SPEED = { right: 1.5, left: 1.9 } // how fast a car takes its curve
+const TURN_SPEED = { right: 1.5, left: 1.9, u: 1.6 } // how fast a car takes its curve
 
 // where a car is on the ground and which way it points (a heading vector), also while it is turning
 export function carPose(c) {
   if (c.arc) return { x: c.arc.x, z: c.arc.z, hx: c.arc.hx, hz: c.arc.hz }
-  return c.axis === 'x' ? { x: c.t, z: c.lat, hx: c.dir, hz: 0 } : { x: c.lat, z: c.t, hx: 0, hz: c.dir }
+  const p = c.axis === 'x' ? { x: c.t, z: c.lat, hx: c.dir, hz: 0 } : { x: c.lat, z: c.t, hx: 0, hz: c.dir }
+  if (c.yaw) { // a car that has lost control points a little away from the road
+    const cs = Math.cos(c.yaw), sn = Math.sin(c.yaw)
+    return { x: p.x, z: p.z, hx: p.hx * cs + p.hz * sn, hz: -p.hx * sn + p.hz * cs }
+  }
+  return p
 }
 
-// ---------- a staged accident ----------
-// the car behind drives up to the one in front until the bumpers touch (never through it), and both stay put until the crash is cleared.
-// everybody else drives around them, or waits, like behind any slow car.
-export function startCrash(front, rear) {
-  front.crash = { role: 'front', other: rear, hit: false }
-  rear.crash = { role: 'rear', other: front, hit: false }
-  front.passing = rear.passing = null
+// how far a car reaches sideways (across the road), also when it points a bit off the road
+const sideReach = (c) => (c.yaw ? c.hw * Math.abs(Math.cos(c.yaw)) + c.hl * Math.abs(Math.sin(c.yaw)) : c.hw)
+
+// ---------- an accident that builds up ----------
+// two real cars on the street. the driver of 'a' loses control: the car wobbles, then swerves (a rear-end bump into the car in front, or a swerve
+// across the middle into the car coming the other way) and runs into 'b'. nothing jumps: the car steers there, and they touch when their real shapes
+// touch. then both stay put, a bit crooked, until the crash is cleared. everybody else drives around them, or waits, or turns back.
+export function startCrash(a, b, kind = 'rear') {
+  a.crash = { role: 'loser', kind, other: b, hit: false, t: 0, toward: 0 }
+  b.crash = { role: 'victim', kind, other: a, hit: false, t: 0, toward: 0 }
+  for (const c of [a, b]) { c.passing = null; c.turn = 'straight'; c.yaw = 0 }
+  // which way is the other lane? (the way a swerve goes)
+  const side = -Math.sign(a.lat || a.lane)
+  a.crash.toward = side
+  b.crash.toward = -side
 }
 
 export function endCrash(a, b) {
-  for (const c of [a, b]) { c.crash = null; c.still = 0 }
+  for (const c of [a, b]) { c.crash = null; c.still = 0; c.stuck = 0; c.hwe = 0; c.freeSlide = 2.2 } // (nose to nose after a head-on: for a moment each may slide back to its lane, whoever is beside)
 }
 
-// the space between the rear car's nose and the front car's tail (0 means touching)
-export const crashGap = (rear, front) => (front.t - rear.t) * rear.dir - rear.hl - front.hl
+// which way a car must turn (the sign of its yaw) to move towards 'toward' (-1 or +1, along the lateral axis of its road)
+const yawFor = (c, toward) => (c.axis === 'x' ? toward * c.dir * -1 : toward * c.dir)
 
-const TOUCH = 0.03 // the little space left between two cars that have bumped
-
-function stepCrash(c, dt) {
+function stepCrash(c, cars, dt) {
   const k = c.crash
-  if (k.role === 'front') {
-    c.speed = Math.max(0, c.speed - 14 * dt) // brakes hard
-  } else if (!k.hit) {
-    const gap = crashGap(c, k.other)
-    if (gap <= TOUCH + 0.01) {
-      c.speed = 0
-      c.t = k.other.t - c.dir * (c.hl + k.other.hl + TOUCH)
-      k.hit = k.other.crash.hit = true
-      k.other.speed = 0
-    } else {
-      const target = Math.min(2.4, Math.max(0.45, gap * 2)) // slows down as it gets close
-      c.speed += (target - c.speed) * Math.min(1, 6 * dt)
-    }
-  } else {
+  k.t += dt
+  if (k.hit) { // a wreck: stopped, resting a bit crooked
     c.speed = 0
+    c.still = 0
+    return
   }
-  c.t += c.dir * c.speed * dt
+  const other = k.other
+  if (k.role === 'loser') {
+    const grow = Math.min(1, k.t / 1.1)
+    if (k.kind === 'rear') { // it does not brake and wobbles: the wobble grows, it speeds up at the car in front
+      c.yaw = Math.sin(k.t * 5.5) * 0.3 * grow
+      const target = Math.min(6, Math.max(c.base, other.speed) + 2.4)
+      c.speed += (target - c.speed) * Math.min(1, 2.5 * dt)
+    } else { // it steers across the middle until it is in the other car's lane, then it is pointing straight at it
+      const left = Math.min(1, Math.abs(other.lat - c.lat) / 0.45) // (how much of the way across is left)
+      c.yaw = yawFor(c, k.toward) * 0.42 * grow * left
+      c.speed += (Math.max(c.base, 2.6) - c.speed) * Math.min(1, 2 * dt)
+    }
+  } else if (k.kind === 'head') { // the other driver sees it too late: brakes, swerves a little away
+    const late = Math.max(0, k.t - 0.55)
+    c.yaw = yawFor(c, k.toward) * 0.14 * Math.min(1, late / 0.4)
+    c.speed = Math.max(0, c.speed - 4.5 * late * dt) // brakes, but it is far too late
+  } else { // the car in front does not see it coming
+    c.yaw = Math.sin(k.t * 3) * 0.04
+  }
+  const v = c.speed
+  const lat = c.axis === 'x' ? -c.dir : c.dir // which way along the lateral axis a positive yaw takes it
+  c.t += c.dir * Math.cos(c.yaw) * v * dt
+  c.lat += lat * Math.sin(c.yaw) * v * dt
+  c.hwe = sideReach(c)
   c.still = 0 // a wreck is not an idle car: it is not cleared away
+  if (k.role === 'loser' && rectsTouch(rectOf(c), rectOf(other))) { // they touch: both stop where they are, a little crooked
+    for (let i = 0; i < 40 && rectsTouch(rectOf(c), rectOf(other)); i++) { // (the last step went a little into the other car: back out along the way it came)
+      c.t -= c.dir * Math.cos(c.yaw) * 0.02
+      c.lat -= lat * Math.sin(c.yaw) * 0.02
+    }
+    c.speed = other.speed = 0
+    c.yaw *= 0.7
+    if (k.kind === 'rear') other.yaw = (other.yaw || 0.05) + 0.1 * (c.yaw >= 0 ? 1 : -1) // the car in front is knocked a little sideways
+    c.hwe = sideReach(c)
+    other.hwe = sideReach(other)
+    k.hit = other.crash.hit = true
+  }
 }
 
 // how much longer the roads are than in the 12 county city (the city grows a second ring when there are more counties)
 let reach = 0
+let fixed = [] // things that stand still beside the road: [{ x, z, r }] (lamp posts)
+export const setObstacles = (list) => { fixed = list }
 
 const GREEN = 5 // seconds a road keeps its green before it has to give way (if somebody is waiting)
 const YELLOW = 2.2 // every green ends with a yellow, cars that can still stop do, the others carry on through
@@ -106,7 +145,7 @@ function followLimit(m, movers, cfg) {
     if (o === m || !o.active || o.road !== m.road) continue
     const ahead = (o.t - m.t) * m.dir
     if (ahead <= 0) continue
-    if (Math.min(Math.abs(o.lat - m.lat), Math.abs(o.goal - m.lat)) >= m.hw + o.hw + cfg.side) continue
+    if (Math.min(Math.abs(o.lat - m.lat), Math.abs(o.goal - m.lat)) >= (m.hwe || m.hw) + (o.hwe || o.hw) + cfg.side) continue
     const gap = ahead - m.hl - o.hl - cfg.gap
     if (o.dir === m.dir) lim = Math.min(lim, brake(gap, cfg.brake))
     else if (o.passing && !m.passing) lim = Math.min(lim, Math.sqrt(o.speed * o.speed + 2 * cfg.brake * Math.max(0, gap)) - o.speed) // somebody overtaking comes at me: i give way
@@ -121,7 +160,7 @@ function passPlan(m, movers, cfg) {
   let lead = null
   for (const o of movers) {
     if (o === m || !o.active || o.road !== m.road || o.dir !== m.dir || p(o) <= p(m)) continue
-    if (Math.abs(o.lat - m.lane) >= m.hw + o.hw + cfg.side) continue
+    if (Math.abs(o.lat - m.lane) >= m.hw + (o.hwe || o.hw) + cfg.side) continue
     if (!lead || p(o) < p(lead)) lead = o
   }
   if (!lead) return null
@@ -138,7 +177,7 @@ function passPlan(m, movers, cfg) {
   const near = m.hw + cfg.side
   for (const o of movers) {
     if (o === m || o === lead || !o.active || o.road !== m.road) continue
-    const inAlt = Math.min(Math.abs(o.lat - m.alt), Math.abs(o.goal - m.alt)) < near + o.hw
+    const inAlt = Math.min(Math.abs(o.lat - m.alt), Math.abs(o.goal - m.alt)) < near + (o.hwe || o.hw)
     if (o.dir !== m.dir) {
       if (!inAlt || p(o) - o.hl < start) continue // not in my way, or already behind me
       if (p(o) - o.hl - o.base * time < end + 1) return null // it would reach me before i am done
@@ -151,14 +190,35 @@ function passPlan(m, movers, cfg) {
   return { lead, start, end }
 }
 
-// start a pass when one is possible, finish it (go back to my own lane) once i am clear of the one i passed
+// how much room there is ahead of me in my own lane (from my nose to the next car in it)
+function homeGap(m, movers) {
+  let best = Infinity
+  for (const o of movers) {
+    if (o === m || !o.active || o.road !== m.road || o.arc) continue
+    if (Math.abs(o.lat - m.lane) >= m.hw + (o.hwe || o.hw) + 0.1) continue
+    const ahead = (o.t - m.t) * m.dir
+    if (ahead > 0) best = Math.min(best, ahead - m.hl - o.hl)
+  }
+  return best
+}
+const roomToMerge = (m, movers, cfg) => homeGap(m, movers) >= 1.2 + (m.speed * m.speed) / (2 * cfg.brake)
+
+// start a pass when one is possible, finish it (go back to my own lane) once i am clear of the one i passed, and only when there is room to pull in
 function updatePass(m, movers, cfg, canStart) {
   const p = (o) => o.t * m.dir
+  if (m.waitMerge && !m.passing) { // done passing, but somebody is stopped right ahead in my lane: stay out (and slow down) until there is room
+    if (roomToMerge(m, movers, cfg)) { m.waitMerge = false; m.goal = m.lane }
+    return
+  }
   if (m.passing) {
     const lead = m.passing
     const ahead = p(m) - m.hl - (p(lead) + lead.hl) > cfg.clear
     const behind = p(lead) - lead.hl - (p(m) + m.hl) > cfg.clear
-    if (!lead.active || ahead || behind) { m.passing = null; m.goal = m.lane }
+    if (!lead.active || ahead || behind) {
+      m.passing = null
+      if (roomToMerge(m, movers, cfg)) m.goal = m.lane
+      else m.waitMerge = true
+    }
     return
   }
   if (m.goal !== m.lane || Math.abs(m.lat - m.lane) > 0.01) return
@@ -187,7 +247,7 @@ function slide(m, movers, cfg, dt) {
     m.lat = to
     return
   }
-  for (const o of movers) if (near(o) && Math.abs(o.lat - next) < m.hw + o.hw + cfg.side) return
+  if (!m.freeSlide) for (const o of movers) if (near(o) && Math.abs(o.lat - next) < m.hw + o.hw + cfg.side) return
   m.lat = next
 }
 
@@ -269,6 +329,15 @@ const walkersGo = (sig, axis) => sig.mode === 'green' && sig.phase === axis // p
 const POLE = 0.3 // how far the body of a vehicle should stay from the middle of the crossroad (the pole is about 0.2 wide at most)
 
 function curveTable(start, h, side, kind, k) {
+  if (kind === 'u') { // half a circle, from my lane over to the other lane (side points at it), then I head back the way I came
+    const pts = []
+    for (let i = 0; i <= 48; i++) {
+      const a = (i / 48) * Math.PI, sn = Math.sin(a), cs = Math.cos(a)
+      pts.push({ x: start[0] + side[0] * LANE * (1 - cs) + h[0] * LANE * sn, z: start[1] + side[1] * LANE * (1 - cs) + h[1] * LANE * sn, hx: side[0] * sn + h[0] * cs, hz: side[1] * sn + h[1] * cs, s: 0 })
+    }
+    for (let i = 1; i < pts.length; i++) pts[i].s = pts[i - 1].s + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z)
+    return { pts, len: pts[pts.length - 1].s }
+  }
   const R = kind === 'right' ? BOX - LANE : BOX + LANE
   const end = [start[0] + (side[0] + h[0]) * R, start[1] + (side[1] + h[1]) * R]
   const pts = []
@@ -326,6 +395,16 @@ function turnArc(c) {
   return { kind: c.turn, pts, len, s: 0, newAxis, dir2, lat2: newAxis === 'x' ? dir2 * LANE : -dir2 * LANE, x: start[0], z: start[1], hx: h[0], hz: h[1] }
 }
 
+// the half circle of a U-turn from where the car stands
+function uArc(c) {
+  const h = c.axis === 'x' ? [c.dir, 0] : [0, c.dir]
+  const start = c.axis === 'x' ? [c.t, c.lat] : [c.lat, c.t]
+  const toward = -Math.sign(c.lane)
+  const side = c.axis === 'x' ? [0, toward] : [toward, 0]
+  const { pts, len } = curveTable(start, h, side, 'u', 0)
+  return { kind: 'u', pts, len, s: 0, newAxis: c.axis, dir2: -c.dir, lat2: -c.lane, tEnd: c.t, x: start[0], z: start[1], hx: h[0], hz: h[1] }
+}
+
 // where on the curve a car is after driving s along it
 function arcPoint(a, s) {
   const pts = a.pts
@@ -343,6 +422,7 @@ function placeOnArc(c) {
   const a = c.arc
   Object.assign(a, arcPoint(a, a.s))
   c.t = c.axis === 'x' ? a.x : a.z // the others see the turning car at this spot of the road it came from, in its lane
+  if (a.kind === 'u') c.lat = c.axis === 'x' ? a.z : a.x // (a U-turn stays on its own road, so everybody sees where it really is)
 }
 
 // the real shape of a car on the ground: a rectangle that points where it faces (grown forward by 'more', and sideways by 'wide')
@@ -369,12 +449,17 @@ function walkerRect(w, more = 0, wide = 0) {
 
 // a long car swings its tail out when it turns, so before it starts the curve the whole swept area must be free,
 // also for the next two seconds of whoever is still coming (at the speed they have now)
-function sweepClear(c, cars, walkers, sig) {
-  const a = turnArc(c)
+function sweepClear(c, cars, walkers, sig, arc = null) {
+  const a = arc || turnArc(c)
   const speed = TURN_SPEED[a.kind]
   for (let i = 0; i <= 18; i++) {
     const s = (a.len * i) / 18
-    const mine = { ...arcPoint(a, s), hl: c.hl, hw: c.hw + 0.1 }
+    const mine = { ...arcPoint(a, s), hl: c.hl + 0.12, hw: c.hw + 0.1 } // (room to spare all round, also in front and behind)
+    for (const f of fixed) { // a lamp post: the body of the car must stay clear of it
+      const px = f.x - mine.x, pz = f.z - mine.z
+      const along = px * mine.hx + pz * mine.hz, across = -px * mine.hz + pz * mine.hx
+      if (Math.hypot(Math.max(Math.abs(along) - mine.hl, 0), Math.max(Math.abs(across) - mine.hw, 0)) < f.r + 0.08) return false
+    }
     const by = s / speed + 0.5 // by the time i am at this spot, anybody coming has covered up to this much road
     for (const o of cars) {
       if (o === c || !o.active) continue
@@ -414,13 +499,19 @@ function exitFree(c, cars) {
 function finishTurn(c) {
   const a = c.arc
   const over = Math.max(0, a.s - a.len)
+  if (a.kind === 'u') { // facing the other way in the other lane, on the same road, at the same place: off it goes (it turns at the next crossroad if it likes)
+    const pick = [null, 'right', 'left'][Math.floor(c.base * 100) % 3]
+    Object.assign(c, { dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.tEnd, turn: pick && turnFits(c.hl, c.hw, pick).ok ? pick : 'straight', arc: null, passing: null, still: 0, stuck: 0, backed: 0 })
+    return
+  }
   Object.assign(c, { axis: a.newAxis, road: a.newAxis, dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.dir2 * (BOX + over), turn: 'straight', arc: null, passing: null, still: 0 })
 }
 
 function stepTurn(c, cars, dt) {
   const a = c.arc
-  let lim = Math.min(c.base, TURN_SPEED[a.kind], followLimit(c, cars, CAR))
-  if (a.s > a.len * 0.4 && !exitFree(c, cars)) lim = 0 // stop inside rather than drive into somebody
+  let lim = Math.min(c.base, TURN_SPEED[a.kind])
+  if (a.kind !== 'u') lim = Math.min(lim, followLimit(c, cars, CAR)) // (a U-turn was checked all the way round before it started, and what is ahead in the lane it is leaving does not matter)
+  if (a.kind !== 'u' && a.s > a.len * 0.4 && !exitFree(c, cars)) lim = 0 // stop inside rather than drive into somebody
   c.speed = approach(c, lim, CAR, dt)
   a.s += c.speed * dt
   if (a.s >= a.len) { finishTurn(c); return }
@@ -428,9 +519,33 @@ function stepTurn(c, cars, dt) {
   c.still = 0
 }
 
+// stuck behind a wreck: is there one ahead on my road (close enough that it is what the queue is waiting for), and am i held up by it?
+function stuckBehindWreck(c, cars) {
+  if (c.speed > 0.05 || Math.abs(c.t) < 7 || c.passing || c.turn !== 'straight') return false
+  let wreck = false
+  for (const o of cars) if (o !== c && o.active && o.crash && o.road === c.road && (o.t - c.t) * c.dir > 0 && (o.t - c.t) * c.dir < 16) wreck = true
+  return wreck && followLimit(c, cars, CAR) < 0.4
+}
+
+// nobody right behind me in my lane (so i can back up a little)
+const roomBehind = (c, cars) => !cars.some((o) => o !== c && o.active && o.road === c.road && Math.abs(o.lat - c.lat) < c.hw + (o.hwe || o.hw) + 0.2 && (c.t - o.t) * c.dir > 0 && (c.t - o.t) * c.dir < c.hl + o.hl + 0.8)
+
+// turn back: half a circle into the other lane when it is free (cars coming the other way are waited for), after backing up if there is not room to swing round
+function tryUTurn(c, cars, walkers, sig, dt) {
+  if (c.hl > 1.6 || Math.abs(c.lat - c.lane) > 0.05) return false // (a really long vehicle, a train or a long sled, cannot swing round and waits)
+  const a = uArc(c)
+  if (sweepClear(c, cars, walkers, sig, a)) { c.arc = a; c.backed = 0; placeOnArc(c); return true }
+  if ((c.backed || 0) < 2.6 && roomBehind(c, cars)) { c.t -= c.dir * 0.8 * dt; c.backed = (c.backed || 0) + 0.8 * dt; c.still = 0; return true }
+  return false
+}
+
 function stepCar(c, cars, walkers, tr, dt) {
-  if (c.crash) { stepCrash(c, dt); return }
+  if (c.crash) { stepCrash(c, cars, dt); return }
+  if (c.freeSlide > 0) c.freeSlide -= dt
+  if (c.yaw) { c.yaw = Math.abs(c.yaw) < 0.01 ? 0 : c.yaw * (1 - Math.min(1, 3 * dt)); c.hwe = c.yaw ? sideReach(c) : 0 } // a car that has been in a crash straightens up again once it drives off
   if (c.arc) { stepTurn(c, cars, dt); return }
+  c.stuck = stuckBehindWreck(c, cars) ? c.stuck + dt : 0
+  if (c.stuck > 1.5 && tryUTurn(c, cars, walkers, tr.sig, dt)) return
   const sig = tr.sig
   updatePass(c, cars, CAR, (plan) => {
     if (c.turn !== 'straight') return false // a car that is about to turn does not overtake
@@ -444,6 +559,7 @@ function stepCar(c, cars, walkers, tr, dt) {
 
   let lim = c.passing ? c.base * CAR.boost : c.base
   lim = Math.min(lim, followLimit(c, cars, CAR))
+  if (c.waitMerge) lim = Math.min(lim, brake(Math.max(0, homeGap(c, cars) - 0.8), CAR.brake)) // (out in the other lane, slowing down for whatever is stopped in mine)
 
   const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || allows(sig, c)
   const turnAt = -BOX - pos(c) // how far the middle of a turning car is from the start of its curve
@@ -477,18 +593,18 @@ function roomFor(c, cars) {
   for (const o of cars) {
     if (o === c || !o.active || o.road !== c.road) continue
     if (o.passing && Math.abs(o.goal - c.lane) < 0.1) return false
-    const sameLane = Math.min(Math.abs(o.lat - c.lane), Math.abs(o.goal - c.lane)) < c.hw + o.hw + CAR.side
+    const sameLane = Math.min(Math.abs(o.lat - c.lane), Math.abs(o.goal - c.lane)) < c.hw + (o.hwe || o.hw) + CAR.side
     if (sameLane && Math.abs(o.t - c.t) < c.hl + o.hl + 3) return false
   }
   return true
 }
 
 // put one car from the pool on the road: at the far end, or (for the first few) somewhere in the middle
-export function spawnCar(cars, rng, anywhere = false) {
+export function spawnCar(cars, rng, anywhere = false, prefer = null) { // prefer: { axis } brings the cars onto that road (the street where something is about to happen)
   const free = cars.filter((c) => !c.active)
   if (!free.length) return null
   const c = free[Math.floor(rng() * free.length)]
-  const axis = rng() > 0.5 ? 'x' : 'z'
+  const axis = prefer && prefer.axis ? prefer.axis : rng() > 0.5 ? 'x' : 'z'
   const lane = rng() > 0.5 ? 0.75 : -0.75
   const dir = axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1)
   let p = -(CAR.edge + reach + c.hl)
@@ -504,7 +620,7 @@ export function spawnCar(cars, rng, anywhere = false) {
   const r = rng()
   let turn = passed || r < 0.7 ? 'straight' : r < 0.88 ? 'right' : 'left' // most go straight on, a few turn right, fewer turn left
   if (turn !== 'straight' && (c.hl >= 1.8 || !turnFits(c.hl, c.hw, turn).ok)) turn = 'straight' // a vehicle that would brush the pole or does not fit round the corner goes straight on
-  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null })
+  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null, waitMerge: false, yaw: 0, stuck: 0, backed: 0, hwe: 0 })
   c.speed = c.base
   if (!roomFor(c, cars)) { c.active = false; return null }
   return c
@@ -537,7 +653,7 @@ function setLane(w, lots) {
 }
 
 // n people spread over the four footpaths along the roads
-export function placeWalkers(n, rng) {
+export function placeWalkers(n, rng, extra = 0) { // extra: how much longer the roads are (a hidden setting used to be read here, so a test that ran before could change this one)
   const out = []
   for (let i = 0; i < n; i++) {
     const axis = i % 2 ? 'x' : 'z'
@@ -548,7 +664,7 @@ export function placeWalkers(n, rng) {
     setLane(w, [])
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
-      w.t = (rng() > 0.5 ? 1 : -1) * (4.5 + rng() * (8 + reach))
+      w.t = (rng() > 0.5 ? 1 : -1) * (4.5 + rng() * (8 + extra))
       if (!out.some((o) => o.road === w.road && Math.abs(o.t - w.t) < 1.6)) break
     }
     w.speed = w.base
@@ -564,7 +680,7 @@ function carInTheWay(w, cars) {
   const band = w.axis === 'x' ? { x: 0, z: lane.z, hx: 1, hz: 0, hl: BOX + 0.3, hw: 0.8 } : { x: lane.x, z: 0, hx: 0, hz: 1, hl: BOX + 0.3, hw: 0.8 }
   for (const c of cars) {
     if (!c.active) continue
-    if (c.arc && c.axis === w.axis) return true // it is turning into the road i want to cross
+    if (c.arc && c.arc.kind !== 'u' && c.axis === w.axis) return true // it is turning into the road i want to cross
     if (rectsTouch(rectOf(c, 0, 0.1), band)) return true
   }
   return false

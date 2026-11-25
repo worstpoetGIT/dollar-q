@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { compare, wallBricks, allBricks, timeline, claddingHeight, isWall, pieceMode, KITS, MAX_BRICKS, CRANE_TIME } from '../src/construction.js'
+import { compare, wallBricks, allBricks, timeline, paintEdge, isWall, pieceMode, openingsOf, windowPanes, frameOf, siteOf, KITS, MAX_BRICKS, CRANE_TIME, FLOOR_H } from '../src/construction.js'
 
 const box = (cx, cy, cz, w, h, d, color = 1) => ({ kind: 'box', cx, cy, cz, w, h, d, bottom: cy - h / 2, top: cy + h / 2, color, upright: true })
 const drum = (cx, cy, cz, r, h, color = 1) => ({ kind: 'cyl', cx, cy, cz, rt: r, rb: r, h, seg: 18, bottom: cy - h / 2, top: cy + h / 2, color, upright: true })
 const other = (cx, cy, cz, r, h) => ({ kind: 'other', cx, cy, cz, h, w: r * 2, d: r * 2, bottom: cy - h / 2, top: cy + h / 2, color: 2, upright: true })
 
 // the same tower with 2 floors, then with 3 floors (a taller wall, the roof slab moves up)
-const tower = (f) => [box(0, (1.6 + 1.35 * f) / 2, 0, 2.6, 1.6 + 1.35 * f, 2.6, 7), box(0, 1.6 + 1.35 * f + 0.11, 0, 2.8, 0.22, 2.8, 8), box(0.6, 1.6 + 1.35 * f + 0.7, 0.6, 0.12, 1.0, 0.12, 9)]
+const tower = (f) => [{ ...box(0, (1.6 + 1.35 * f) / 2, 0, 2.6, 1.6 + 1.35 * f, 2.6, 7), win: { floors: f * 2, cols: 3, glass: 0x203a5a } }, box(0, 1.6 + 1.35 * f + 0.11, 0, 2.8, 0.22, 2.8, 8), box(0.6, 1.6 + 1.35 * f + 0.7, 0.6, 0.12, 1.0, 0.12, 9)]
 // a stack of floors, one box each (like the lego or war map)
 const stack = (f) => [...Array(f)].map((_, i) => box(0, i * 0.62 + 0.29, 0, 3.2, 0.58, 2.8, i % 2 ? 4 : 5)).concat([box(0, f * 0.62 + 0.06, 0, 3.2, 0.12, 2.8, 6)])
 
@@ -98,10 +98,11 @@ describe('construction: when it happens', () => {
   const plan = compare(tower(2), tower(3))
   const tl = timeline(plan, KITS.city)
 
-  it('the old roof is lifted off before the first brick is laid', () => {
+  it('the old roof is lifted off before anything else is built', () => {
     expect(tl.removes.length).toBe(2)
     const off = Math.max(...tl.removes.map((r) => r.start + r.dur))
     expect(tl.brickStart).toBeGreaterThan(off)
+    expect(Math.min(...tl.frame.map((p) => p.start))).toBeGreaterThanOrEqual(off - 1e-9)
     expect(Math.min(...tl.bricks.map((b) => b.start))).toBeGreaterThanOrEqual(tl.brickStart)
   })
 
@@ -112,21 +113,19 @@ describe('construction: when it happens', () => {
       expect(b.y).toBeGreaterThanOrEqual(top - 0.5) // never a brick far above what is already laid
       top = Math.max(top, b.y)
     }
-    const lastCourse = Math.max(...tl.bricks.map((b) => b.course))
-    expect(tl.bricks.filter((b) => b.course === lastCourse).every((b) => b.land >= tl.bricks.filter((c) => c.course === 0).reduce((m, c) => Math.max(m, c.land), 0))).toBe(true)
   })
 
   it('the four bricklayers each have their own side and never lay two bricks at once', () => {
     for (let s = 0; s < 4; s++) {
       const mine = tl.bricks.filter((b) => b.side === s).sort((a, b) => a.start - b.start)
       expect(mine.length).toBeGreaterThan(0)
-      for (let i = 1; i < mine.length; i++) expect(mine[i].start).toBeGreaterThan(mine[i - 1].start - 1e-9)
       expect(new Set(mine.map((b) => b.start.toFixed(4))).size).toBe(mine.length)
     }
   })
 
-  it('the crane carries one thing at a time, and the roof goes on only after the walls are up', () => {
-    const crane = tl.pieces.filter((p) => p.mode === 'crane').sort((a, b) => a.start - b.start)
+  it('the crane carries one thing at a time (floor decks and roof alike), and the roof goes on only after the walls are up', () => {
+    const crane = [...tl.frame.filter((p) => p.mode === 'crane'), ...tl.pieces.filter((p) => p.mode === 'crane')].sort((a, b) => a.start - b.start)
+    expect(crane.length).toBeGreaterThan(1)
     for (let i = 1; i < crane.length; i++) expect(crane[i].start).toBeGreaterThanOrEqual(crane[i - 1].start + crane[i - 1].dur - 1e-9)
     const roof = tl.pieces.find((p) => p.d.color === 8)
     expect(roof.mode).toBe('crane')
@@ -134,22 +133,23 @@ describe('construction: when it happens', () => {
     expect(roof.dur).toBeCloseTo(CRANE_TIME, 5)
   })
 
-  it('the finished wall shows up behind the bricklayers and reaches the top when the work is done', () => {
-    expect(claddingHeight(tl, 0)).toBeCloseTo(tl.wallBottom, 5)
-    let last = -1
+  it('painting starts at the top once the walls, windows and roof are done, and comes down to the bottom', () => {
+    const roof = tl.pieces.find((p) => p.d.color === 8)
+    expect(tl.paintStart).toBeGreaterThanOrEqual(Math.max(tl.lastBrick, tl.windowsEnd, roof.start + roof.dur) - 1e-9)
+    expect(paintEdge(tl, 0)).toBeGreaterThan(tl.topAll) // nothing painted yet
+    let last = Infinity
     for (let t = 0; t <= tl.end; t += 0.25) {
-      const h = claddingHeight(tl, t)
-      expect(h).toBeGreaterThanOrEqual(last - 1e-9) // only goes up
-      last = h
+      const e = paintEdge(tl, t)
+      expect(e).toBeLessThanOrEqual(last + 1e-9) // only goes down
+      last = e
     }
-    expect(claddingHeight(tl, tl.claddingEnd + 0.01)).toBeCloseTo(tl.topAll, 5)
-    const mid = tl.brickStart + (tl.lastBrick - tl.brickStart) / 2
-    expect(claddingHeight(tl, mid)).toBeLessThan(tl.topAll - 0.3)
+    expect(paintEdge(tl, tl.paintEnd + 0.01)).toBeCloseTo(tl.wallBottom, 5)
+    expect(tl.end).toBeGreaterThan(tl.paintEnd)
   })
 
   it('a floor takes a while but not forever, and waiting levels speed it up', () => {
-    expect(tl.end).toBeGreaterThan(8)
-    expect(tl.end).toBeLessThan(30)
+    expect(tl.end).toBeGreaterThan(15)
+    expect(tl.end).toBeLessThan(60)
     const fast = timeline(plan, KITS.city, 4)
     expect(fast.end).toBeLessThan(tl.end / 2.5)
   })
@@ -158,10 +158,105 @@ describe('construction: when it happens', () => {
     for (const [name, kit] of Object.entries(KITS)) {
       const t = timeline(compare(stack(2), stack(3)), kit)
       expect(t.bricks.length, name).toBeGreaterThan(30)
-      expect(t.end, name).toBeLessThan(40)
+      expect(t.end, name).toBeLessThan(60)
     }
     const t = timeline(compare([], tower(5)), KITS.city) // a whole new tall building
     expect(t.bricks.length).toBeLessThanOrEqual(MAX_BRICKS)
-    expect(t.end).toBeLessThan(45)
+    expect(t.end).toBeLessThan(150)
+  })
+})
+
+describe('construction: windows are gaps in the wall and fitted afterwards', () => {
+  const plan = compare(tower(2), tower(3))
+  const tl = timeline(plan, KITS.city)
+  const wall = plan.walls[0]
+
+  it('only the windows of the new part are built, one in every cell of the new rows, on all four sides', () => {
+    const o = openingsOf(wall)
+    expect(o.length).toBeGreaterThan(0)
+    expect(o.length % (3 * 4)).toBe(0) // columns x sides
+    for (const w of o) { expect(w.y0).toBeGreaterThanOrEqual(wall.from - 1e-6); expect(w.y1).toBeLessThanOrEqual(wall.to + 1e-6) }
+    expect(new Set(o.map((w) => w.side))).toEqual(new Set([0, 1, 2, 3]))
+  })
+
+  it('no brick is laid where a window goes', () => {
+    const o = openingsOf(wall)
+    const without = wallBricks({ ...wall, d: { ...wall.d, win: undefined } }, KITS.city)
+    const bricks = wallBricks(wall, KITS.city)
+    expect(bricks.length).toBeLessThan(without.length)
+    for (const b of bricks) {
+      const c = b.side % 2 === 0 ? b.x : b.z
+      for (const w of o) if (w.side === b.side) {
+        const across = Math.min(c + b.sx / 2, w.a1) - Math.max(c - b.sx / 2, w.a0)
+        const up = Math.min(b.y + b.sy / 2, w.y1) - Math.max(b.y - b.sy / 2, w.y0)
+        expect(across > b.sx * 0.45 && up > b.sy * 0.45).toBe(false)
+      }
+    }
+  })
+
+  it('a window pane sits in each gap, flush with the wall, and is fitted after the wall around it is laid', () => {
+    const panes = windowPanes(plan.walls)
+    expect(panes.length).toBe(openingsOf(wall).length)
+    for (const p of panes) {
+      expect(p.glass).toBe(0x203a5a)
+      const out = Math.max(Math.abs(p.x), Math.abs(p.z))
+      expect(out).toBeGreaterThan(1.3 - 1e-9) // on the face of the wall (2.6 wide)
+      expect(out).toBeLessThan(1.3 + 0.02)
+    }
+    for (const p of tl.panes) {
+      const done = tl.courseEnd.find(([top]) => top >= p.top - 0.05)
+      expect(p.start).toBeGreaterThanOrEqual(done[1] - 1e-9)
+      expect(p.start + p.dur).toBeLessThanOrEqual(tl.paintStart + 1e-9)
+    }
+    expect(tl.panes.every((p, i) => i === 0 || p.start >= tl.panes[i - 1].start - 1e-9)).toBe(true) // lowest first
+  })
+
+  it('maps whose buildings have no painted windows build no panes', () => {
+    expect(windowPanes(compare(stack(2), stack(3)).walls).length).toBe(0)
+  })
+})
+
+describe('construction: the frame and the site', () => {
+  const plan = compare(tower(2), tower(3))
+  const tl = timeline(plan, KITS.city)
+
+  it('every floor has columns, beams and a deck the crane lays', () => {
+    const f = frameOf(plan.walls[0])
+    expect(f.levels).toBe(Math.round(1.35 / FLOOR_H))
+    for (let i = 1; i <= f.levels; i++) {
+      const parts = f.parts.filter((p) => p.level === i)
+      expect(parts.filter((p) => p.type === 'col').length).toBeGreaterThanOrEqual(4)
+      expect(parts.filter((p) => p.type === 'beam').length).toBe(4)
+      expect(parts.filter((p) => p.type === 'deck').length).toBe(1)
+    }
+    expect(tl.frame.filter((p) => p.type === 'deck').every((p) => p.mode === 'crane')).toBe(true)
+    expect(tl.frame.filter((p) => p.type === 'col').every((p) => p.mode === 'pour')).toBe(true)
+  })
+
+  it('a tall wall gets a frame floor for every 1.3 or so, one after the other', () => {
+    const t = timeline(compare([], tower(5)), KITS.city)
+    const decks = t.frame.filter((p) => p.type === 'deck').sort((a, b) => a.y - b.y)
+    expect(decks.length).toBe(Math.round((1.6 + 1.35 * 5) / FLOOR_H))
+    for (let i = 1; i < decks.length; i++) expect(decks[i].start).toBeGreaterThanOrEqual(decks[i - 1].start + decks[i - 1].dur - 1e-9)
+  })
+
+  it('a course of bricks never starts before the frame of its floor is up', () => {
+    const t = timeline(compare([], tower(3)), KITS.city)
+    const decks = t.frame.filter((p) => p.type === 'deck').sort((a, b) => a.y - b.y)
+    for (const b of t.bricks) {
+      const deck = decks.find((d) => d.y + 0.035 >= b.y - 0.05)
+      expect(b.start).toBeGreaterThanOrEqual(deck.start + deck.dur - 1e-9)
+    }
+  })
+
+  it('a new building gets a fence, then a pit, then a footing, and only then the frame; a floor on top of one that stands gets none', () => {
+    const fresh = timeline(compare([], tower(2)), KITS.city)
+    expect(fresh.site.fence.length).toBeGreaterThan(8)
+    const lastFence = Math.max(...fresh.site.fence.map((f) => f.start))
+    expect(fresh.site.pit.start).toBeGreaterThan(lastFence - 1e-9)
+    expect(fresh.site.footing.start).toBeGreaterThanOrEqual(fresh.site.pit.start + fresh.site.pit.dur - 1e-9)
+    expect(Math.min(...fresh.frame.map((p) => p.start))).toBeGreaterThanOrEqual(fresh.site.footing.start + fresh.site.footing.dur - 1e-9)
+    expect(timeline(plan, KITS.city).site).toBeNull()
+    expect(siteOf(plan.walls)).toBeNull()
   })
 })

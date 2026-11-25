@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, crashGap, carPose, turnFits } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, carPose, turnFits } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -48,7 +48,7 @@ const lotsOf = (size, big = false) => [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1], [-4
 function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
   const rng = seeded(seed)
   const cars = fleet(name)
-  const walkers = placeWalkers(extra > 0 ? 12 : 8, rng)
+  const walkers = placeWalkers(extra > 0 ? 12 : 8, rng, extra)
   const tr = makeTraffic(extra)
   if (lotSize) tr.lots = lotsOf(lotSize, extra > 0)
   for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
@@ -303,86 +303,156 @@ describe('traffic: things still get done', () => {
   }, 120000)
 })
 
-describe('traffic: a staged accident', () => {
-  const crashSetup = () => {
+describe('traffic: an accident that builds up', () => {
+  const crashSetup = (kind = 'rear') => {
     const rng = seeded(5)
     const cars = fleet('city')
     const tr = makeTraffic()
     const walkers = placeWalkers(8, rng)
-    // two cars one behind the other in the same lane, well away from the crossroad
-    const [front, rear, ...rest] = cars
-    const drive = (c, t) => Object.assign(c, { active: true, axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t, base: 2.4, speed: 2.4, passing: null, still: 0 })
-    drive(front, 9)
-    drive(rear, 5.6)
-    return { cars, rest, tr, walkers, front, rear, rng }
+    const [x, y, ...rest] = cars
+    const drive = (c, lane, dir, t, speed) => Object.assign(c, { active: true, axis: 'x', road: 'x', lane, alt: -lane, lat: lane, goal: lane, dir, t, base: 2.4, speed, passing: null, still: 0, turn: 'straight' })
+    // rear-end: one car behind the other in the same lane. head-on: two cars coming at each other in their own lanes. both well away from the crossroad.
+    if (kind === 'rear') { drive(x, 0.75, 1, 9, 2.4); drive(y, 0.75, 1, 5.6, 2.4) } else { drive(x, 0.75, 1, 7, 2.6); drive(y, -0.75, -1, 17, 2.6) }
+    const [a, b] = kind === 'rear' ? [y, x] : [x, y] // a loses control
+    return { cars, rest, tr, walkers, a, b, rng }
   }
   const run = (s, seconds, dt = 1 / 30, each = () => {}) => {
     for (let i = 0; i < seconds / dt; i++) { stepTraffic(s.cars, s.walkers, s.tr, dt); each(i * dt) }
   }
+  const watch = (s, seconds) => { // everything about how the two cars move, step by step
+    const log = { hitAt: null, jump: 0, turn: 0, overlapAfter: false, yawBefore: 0, drift: 0 }
+    let last = { t: s.a.t, yaw: 0 }
+    const lane0 = s.a.lat
+    run(s, seconds, 1 / 30, (time) => {
+      if (s.a.crash && s.a.crash.hit && log.hitAt === null) log.hitAt = time
+      if (log.hitAt === null) { log.yawBefore = Math.max(log.yawBefore, Math.abs(s.a.yaw)); log.drift = Math.max(log.drift, Math.abs(s.a.lat - lane0)) }
+      log.jump = Math.max(log.jump, Math.abs(s.a.t - last.t))
+      log.turn = Math.max(log.turn, Math.abs(s.a.yaw - last.yaw))
+      last = { t: s.a.t, yaw: s.a.yaw }
+      if (log.hitAt !== null && overlap(rectOf(s.a), rectOf(s.b))) log.overlapAfter = true
+    })
+    return log
+  }
 
-  it('the rear car runs up to the front one, stops with the bumpers almost touching, and they do not overlap', () => {
-    const s = crashSetup()
-    startCrash(s.front, s.rear)
-    let overlap = false
-    run(s, 8, 1 / 30, () => { if (crashGap(s.rear, s.front) < -0.001) overlap = true })
-    expect(s.rear.crash.hit).toBe(true)
-    expect(s.front.speed).toBe(0)
-    expect(s.rear.speed).toBe(0)
-    const gap = crashGap(s.rear, s.front)
-    expect(gap).toBeGreaterThan(0)
-    expect(gap).toBeLessThan(0.08)
-    expect(overlap).toBe(false)
-  })
+  for (const kind of ['rear', 'head']) {
+    it(`${kind === 'rear' ? 'rear-end' : 'head-on'}: the driver loses control gradually (wobbling or swerving, no jump), they touch, stop crooked, and never overlap`, () => {
+      const s = crashSetup(kind)
+      startCrash(s.a, s.b, kind)
+      const log = watch(s, 12)
+      expect(log.hitAt).not.toBeNull()
+      expect(log.hitAt).toBeGreaterThan(0.8) // it takes a moment: the car does not teleport into the other one
+      expect(log.jump).toBeLessThan(0.25) // never more than a step of driving
+      expect(log.turn).toBeLessThan(0.08) // the steering changes smoothly
+      expect(log.yawBefore).toBeGreaterThan(0.12) // it really did lose control before the bump
+      if (kind === 'head') expect(log.drift).toBeGreaterThan(0.3) // and swerved across the middle
+      expect(log.overlapAfter).toBe(false)
+      expect(s.a.speed).toBe(0)
+      expect(s.b.speed).toBe(0)
+      expect(Math.abs(s.a.yaw) + Math.abs(s.b.yaw)).toBeGreaterThan(0.03) // they sit a little crooked
+    })
+  }
 
   it('both cars stay where they are for as long as the crash lasts (they are not cleared away as idle)', () => {
-    const s = crashSetup()
-    startCrash(s.front, s.rear)
-    run(s, 6)
-    const at = [s.front.t, s.rear.t]
+    const s = crashSetup('head')
+    startCrash(s.a, s.b, 'head')
+    run(s, 8)
+    const at = [s.a.t, s.b.t, s.a.lat, s.b.lat, s.a.yaw, s.b.yaw]
     run(s, 60)
-    expect(s.front.active && s.rear.active).toBe(true)
-    expect([s.front.t, s.rear.t]).toEqual(at)
+    expect(s.a.active && s.b.active).toBe(true)
+    expect([s.a.t, s.b.t, s.a.lat, s.b.lat, s.a.yaw, s.b.yaw]).toEqual(at)
   })
 
-  it('other cars drive around the wreck or wait behind it, and never run into it', () => {
-    for (const seed of [1, 2, 3]) {
-      const s = crashSetup()
-      s.rng = seeded(seed)
-      startCrash(s.front, s.rear)
-      let bad = 0
-      for (let i = 0; i < 90 / (1 / 30); i++) {
-        if (i % 60 === 0) spawnCar(s.cars, s.rng)
-        stepTraffic(s.cars, s.walkers, s.tr, 1 / 30)
-        for (const c of s.cars) {
-          if (!c.active || c === s.front || c === s.rear) continue
-          for (const w of [s.front, s.rear]) {
-            if (overlap(rectOf(c), rectOf(w))) bad++
+  it('other cars drive around the wreck, wait behind it or turn back, and never run into it', () => {
+    for (const kind of ['rear', 'head']) {
+      for (const seed of [1, 2, 3]) {
+        const s = crashSetup(kind)
+        s.rng = seeded(seed)
+        startCrash(s.a, s.b, kind)
+        let bad = 0
+        for (let i = 0; i < 120 / (1 / 30); i++) {
+          if (i % 45 === 0) spawnCar(s.cars, s.rng)
+          stepTraffic(s.cars, s.walkers, s.tr, 1 / 30)
+          for (const c of s.cars) {
+            if (!c.active || c === s.a || c === s.b) continue
+            for (const w of [s.a, s.b]) if (overlap(rectOf(c), rectOf(w))) bad++
           }
         }
+        expect(bad).toBe(0)
       }
-      expect(bad).toBe(0)
     }
-  }, 60000)
+  }, 120000)
 
-  it('when the crash is cleared both cars drive on', () => {
-    const s = crashSetup()
-    startCrash(s.front, s.rear)
-    run(s, 6)
-    endCrash(s.front, s.rear)
-    expect(s.front.crash).toBeNull()
-    expect(s.rear.crash).toBeNull()
-    const before = s.front.t
-    run(s, 4)
-    expect(s.front.t).toBeGreaterThan(before + 1)
+  it('when the crash is cleared both cars straighten up and drive on', () => {
+    const s = crashSetup('rear')
+    startCrash(s.a, s.b, 'rear')
+    run(s, 8)
+    endCrash(s.a, s.b)
+    expect(s.a.crash).toBeNull()
+    expect(s.b.crash).toBeNull()
+    const before = s.b.t
+    run(s, 5)
+    expect(s.b.t).toBeGreaterThan(before + 1)
+    expect(Math.abs(s.a.yaw)).toBeLessThan(0.02)
+    expect(Math.abs(s.b.yaw)).toBeLessThan(0.02)
   })
 
   it('a wreck does not hold up the traffic light', () => {
-    const s = crashSetup()
-    startCrash(s.front, s.rear)
+    const s = crashSetup('head')
+    startCrash(s.a, s.b, 'head')
     run(s, 20)
     expect(s.tr.busy.x + s.tr.busy.z).toBeGreaterThanOrEqual(0)
     expect(s.tr.sig.mode).toBeTruthy()
   })
+})
+
+describe('traffic: turning back behind a wreck', () => {
+  // a wreck on the x road (rear-end in the + lane, or head-on across the middle), and a stream of cars coming along that road from both ends
+  const scene = (kind, seed, minutes) => {
+    const rng = seeded(seed)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    const [x, y, ...rest] = cars
+    const drive = (c, lane, dir, t, speed) => Object.assign(c, { active: true, axis: 'x', road: 'x', lane, alt: -lane, lat: lane, goal: lane, dir, t, base: 2.4, speed, passing: null, still: 0, turn: 'straight' })
+    if (kind === 'rear') { drive(x, 0.75, 1, 9, 2.4); drive(y, 0.75, 1, 5.6, 2.4) } else { drive(x, 0.75, 1, 7, 2.6); drive(y, -0.75, -1, 17, 2.6) }
+    const [a, b] = kind === 'rear' ? [y, x] : [x, y]
+    startCrash(a, b, kind)
+    const out = { turned: 0, overlaps: [], queue: 0, queueSteps: 0 }
+    const wasU = new Map()
+    let spawnIn = 0.5
+    const dt = 1 / 30
+    for (let step = 0; step < (minutes * 60) / dt; step++) {
+      spawnIn -= dt
+      if (spawnIn <= 0) { spawnIn = 1.6 + rng() * 1.6; spawnCar(cars, rng, false, { axis: 'x' }) }
+      stepTraffic(cars, walkers, tr, dt)
+      for (const c of cars) {
+        const now = !!(c.arc && c.arc.kind === 'u')
+        if (wasU.get(c) && !now && c.active) out.turned++
+        wasU.set(c, now)
+      }
+      const act = cars.filter((c) => c.active)
+      if (step * dt > (minutes * 60) / 2) { out.queue += act.filter((c) => c !== a && c !== b && c.speed < 0.05 && Math.abs(c.t) > 7).length; out.queueSteps++ } // how many stand waiting beside the wreck, on average, in the second half
+      const all = [...act, ...walkers]
+      for (let i = 0; i < all.length && out.overlaps.length < 3; i++) for (let j = i + 1; j < all.length; j++) {
+        if (all[i] === a && all[j] === b) continue
+        if (overlap(rectOf(all[i]), rectOf(all[j]))) { out.overlaps.push(`${seed} ${kind} at ${(step * dt).toFixed(1)}s`); break }
+      }
+    }
+    return out
+  }
+
+  for (const kind of ['rear', 'head']) {
+    it(`${kind === 'rear' ? 'rear-end' : 'head-on'} wreck: cars stuck behind it turn back, nobody overlaps anybody, and the queue does not grow for ever`, () => {
+      let turned = 0
+      for (const seed of [1, 2, 3]) {
+        const r = scene(kind, seed, 3)
+        expect(r.overlaps).toEqual([])
+        expect(r.queue / r.queueSteps).toBeLessThan(4) // a queue forms and clears, it does not grow for ever
+        turned += r.turned
+      }
+      expect(turned).toBeGreaterThan(2)
+    }, 240000)
+  }
 })
 
 describe('traffic: turning at the crossroad', () => {

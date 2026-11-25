@@ -3,8 +3,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
 import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from './cityRules.js'
-import { compare, timeline, claddingHeight, KITS, LIFT } from './construction.js'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
+import { compare, timeline, paintEdge, KITS, LIFT } from './construction.js'
+import { poseAt, nextSegment, stances } from './fight.js'
+import { setObstacles, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -72,6 +73,7 @@ function wall(p, w, h, d, color, floors, cols, x = 0, y = 0, z = 0, glass) {
   m.position.set(x, y + h / 2, z)
   m.castShadow = true
   m.receiveShadow = true
+  if (!WIRE) m.userData.win = { floors, cols, glass: glass ?? 0x2b3a55 } // (a real building site leaves gaps for these and fits window panes)
   p.add(m)
   return m
 }
@@ -300,7 +302,8 @@ export class CityScene {
     this.crashes = [] // staged accidents: two cars that bumped, and the drivers fighting
     this.crashClock = 0
     this.assess = { ready: false, top: null } // where the money goes, from the last ten days (set by setCounties)
-    this.crashDue = false // the dice said an accident should happen: keep trying to place the cars until it works
+    this.crashDue = false // the dice said an accident should happen: keep waiting for the right two cars until it works
+    this.hunt = null // while one is due: { lot, until }, more traffic is sent down that county's street
     this.odds = [] // for every lot: how much is spent in its county, its group and level (what decides where accidents happen)
     this.felling = [] // trees being cut down, with the worker
     this.growing = [] // trees being planted
@@ -442,6 +445,8 @@ export class CityScene {
         this.lamp(sg * 1.62, i)
       }
     }
+    this.lampPosts = (this.ring2 ? [-18, -12, -6, 6, 12, 18] : [-12, -6, 6, 12]).flatMap((i) => [-1, 1].flatMap((sg) => [{ x: i, z: sg * 1.62, r: 0.1 }, { x: sg * 1.62, z: i, r: 0.1 }]))
+    setObstacles(this.lampPosts) // the lamp posts, for the cars that turn round
     this.buildSignals()
     // decor cells
     const [dx, dz] = this.ring2 ? [17.3, 17.3] : [11.1, 11.1] // the park, court, fountain and grove corners
@@ -809,109 +814,208 @@ export class CityScene {
     return accidentWeights(only, this.lots.map((l) => !!l.road))
   }
 
+  // is a crash due? the dice and the county's share of the spending say so. then the cars that crash are two real ones on that county's street:
+  // if the right two are not there yet, more traffic is sent down that street until they are (nothing is ever put there out of nowhere)
   maybeCrash(force = false) {
     const cap = this.cars.length >= 8 ? MAX_ACCIDENTS : 1 // a map with few vehicles can only spare one pair
     if (this.crashes.length >= cap || this.cars.length < 4) return false
-    const weights = this.crashWeights()
-    const danger = weights.reduce((a, b) => a + b, 0)
-    if (!force && this.rng() > accidentChance(danger, 1)) return false
-    const k = pickLot(weights, this.rng())
-    if (k < 0 || this.crashes.some((a) => a.lot === k)) return false
-    const lot = this.lots[k]
-    const r = lot.road
-    const free = (c) => c.active && !c.crash && !c.passing && c.road === r.axis && Math.abs(c.lat - c.lane) < 0.1
-    // the front car: on the lot's side of the road, in front of the lot, and clear of the crossroad
-    for (const front of this.cars) {
-      if (!free(front) || Math.sign(front.lat) !== r.side || Math.abs(front.t - r.along) > 2.6 || Math.abs(front.t) < 5.2) continue
-      let rear = null
-      let best = 6
-      for (const c of this.cars) {
-        if (c === front || !free(c) || c.dir !== front.dir || Math.sign(c.lat) !== Math.sign(front.lat)) continue
-        const gap = (front.t - c.t) * front.dir - front.hl - c.hl
-        if (gap > 0.3 && gap < best) { best = gap; rear = c }
-      }
-      if (!rear) continue
-      startCrash(front, rear)
-      this.crashes.push({ lot: k, front, rear, phase: 'bump', t: 0, fighters: null })
-      return true
+    const now = performance.now()
+    if (this.hunt && now > this.hunt.until) { this.hunt = null; return false } // no luck this time: the dice are thrown again later
+    if (!this.hunt) {
+      const weights = this.crashWeights()
+      const danger = weights.reduce((a, b) => a + b, 0)
+      if (!force && this.rng() > accidentChance(danger, 1)) return false
+      const k = pickLot(weights, this.rng())
+      if (k < 0 || this.crashes.some((a) => a.lot === k)) return false
+      this.hunt = { lot: k, until: now + 60000 }
     }
-    return this.summonCrash(k) // nobody was in the right place: two cars come up the road in front of the county
+    if (this.tryCrash(this.hunt.lot)) { this.hunt = null; return true }
+    return false
   }
 
-  summonCrash(k) {
-    const lot = this.lots[k]
-    const r = lot.road
-    const spare = this.cars.filter((c) => !c.active)
-    if (spare.length < 2) return false
-    const [front, rear] = spare
-    const lane = r.side * 0.75
-    const dir = r.axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1) // the way traffic goes in that lane
-    const out = Math.sign(r.along) // which way from the crossroad the county is
-    const tFront = out * Math.max(5.9, Math.abs(r.along) + 1.4) // in front of the county, as far from the crossroad as it allows
-    const tRear = tFront - dir * (front.hl + rear.hl + 1.2) // just behind it
-    if (Math.abs(tRear) < 4.2 || Math.abs(tRear) > this.E - 1) return false // not into the crossroad, and not off the board
-    for (const c of this.cars) { // not on top of another car
-      if (!c.active || c.road !== r.axis || Math.abs(c.lat - lane) > 0.6) continue
-      if (Math.abs(c.t - tFront) < front.hl + c.hl + 0.6 || Math.abs(c.t - tRear) < rear.hl + c.hl + 0.6) return false
+  // two real cars in front of the county, in the right places: one behind the other in a lane (rear-end), or coming at each other in their own lanes (head-on)
+  tryCrash(k) {
+    const r = this.lots[k].road
+    const ok = (c) => c.active && !c.crash && !c.passing && !c.arc && !c.waitMerge && c.road === r.axis && Math.abs(c.lat - c.lane) < 0.1 && Math.abs(c.t) <= this.E - 1
+    const cand = this.cars.filter(ok)
+    const pairs = []
+    const edge = this.E - 2.5
+    for (const a of cand) for (const b of cand) {
+      if (a === b || Math.sign(a.t) !== Math.sign(b.t)) continue // (on the same side of the crossroad)
+      const gap = (b.t - a.t) * a.dir - a.hl - b.hl // b is ahead of a (a looks at b)
+      let meet = null
+      if (a.dir === b.dir && Math.sign(a.lat) === Math.sign(b.lat) && gap > 1 && gap < 6.5) { meet = { kind: 'rear', t: b.t + b.dir * Math.max(b.speed, 1) * 2.6 } } // (b drives on a little before it is hit)
+      else if (a.dir !== b.dir && Math.sign(a.lat) !== Math.sign(b.lat) && gap > 5 && gap < 13) meet = { kind: 'head', t: (a.t + b.t) / 2 }
+      // the crash must happen on the street in front of the county, away from the crossroad and inside the board
+      if (meet && Math.abs(meet.t) >= 5.6 && Math.abs(meet.t) <= edge && Math.abs(meet.t - r.along) <= 9) pairs.push({ a, b, kind: meet.kind })
     }
-    const base = 2.2
-    for (const [c, t] of [[front, tFront], [rear, tRear]]) {
-      Object.assign(c, { active: true, axis: r.axis, road: r.axis, lane, alt: -lane, lat: lane, goal: lane, dir, t, base, speed: base, passing: null, still: 0, crash: null })
-    }
-    startCrash(front, rear)
-    this.crashes.push({ lot: k, front, rear, phase: 'bump', t: 0, fighters: null })
+    if (!pairs.length) return false
+    const pick = pairs[Math.floor(this.rng() * pairs.length)]
+    startCrash(pick.a, pick.b, pick.kind)
+    this.crashes.push({ lot: k, a: pick.a, b: pick.b, kind: pick.kind, phase: 'bump', t: 0, axis: r.axis, fight: null })
     return true
   }
 
-  makeFighters(a) {
-    const { front } = a
-    const r = this.lots[a.lot].road
-    const lat = front.lat + r.side * (front.hw + 0.4) // on the pavement side of the cars, next to the lot
-    const hitAt = front.t - front.dir * front.hl // where the bumpers met
-    a.axis = r.axis
-    a.fighters = [0, 1].map((j) => {
+  // where the fight takes place: next to the two cars, on the side of the road where they are, clear of the lamp posts
+  makeRing(c) {
+    const side = Math.sign(c.a.lat + c.b.lat) || 1
+    const ax = c.axis
+    const u = ax === 'x' ? [1, 0] : [0, 1]
+    const v = ax === 'x' ? [0, side] : [side, 0]
+    const reach = (x) => x.lat * side + (x.hwe || x.hw)
+    const lat = side * (Math.max(reach(c.a), reach(c.b)) + 0.55)
+    let along = (c.a.t + c.b.t) / 2
+    const lamps = this.lampPosts || []
+    for (const shift of [0, 0.9, -0.9, 1.8, -1.8]) { // slide along the road until no lamp post stands in the ring
+      const cx = ax === 'x' ? along + shift : lat, cz = ax === 'x' ? lat : along + shift
+      if (lamps.every((l) => Math.hypot(l.x - cx, l.z - cz) > 0.9 + 0.7)) { along += shift; break }
+    }
+    const cx = ax === 'x' ? along : lat, cz = ax === 'x' ? lat : along
+    return { cx, cz, u, v, side, ax }
+  }
+
+  ringPoint(ring, x, z) { return [ring.cx + ring.u[0] * x + ring.v[0] * z, ring.cz + ring.u[1] * x + ring.v[1] * z] }
+  ringOf(ring, wx, wz) { return [(wx - ring.cx) * ring.u[0] + (wz - ring.cz) * ring.u[1], (wx - ring.cx) * ring.v[0] + (wz - ring.cz) * ring.v[1]] }
+
+  makeFighters(c) {
+    const ring = this.makeRing(c)
+    const cars = [c.a, c.b].map((car) => { const p = carPose(car); const [x, z] = this.ringOf(ring, p.x, p.z); return { car, x, z } }).sort((p, q) => p.x - q.x) // the car on the left gives the left fighter
+    const f = [0, 1].map((i) => {
       const p = this.folk()
+      p.rotation.order = 'YXZ'
       p.scale.setScalar(0.001)
       this.world.add(p)
-      // the driver of the rear car stands behind the meeting point and faces forward, the other the other way round
-      return { p, j, toward: (j === 0 ? 1 : -1) * front.dir, along: hitAt + (j === 0 ? -1 : 1) * front.dir * 0.28, lat }
+      const car = cars[i].car
+      const box = new THREE.Box3().setFromObject(car.car)
+      const reach = car.hwe || car.hw
+      const door = this.ringPoint(ring, cars[i].x, cars[i].z + reach + 0.12) // out of the door on the side of the ring
+      return { p, car, door, roof: { x: cars[i].x, z: cars[i].z + 0.45 * reach, y: Math.max(0.2, box.max.y - 0.15), ok: box.max.y > 0.35 && box.max.y < 1.7 } }
     })
+    const tex = this.countTexture
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex[0], depthTest: false, transparent: true }))
+    sprite.scale.set(0.9, 0.9, 1)
+    sprite.visible = false
+    sprite.renderOrder = 10
+    this.world.add(sprite)
+    c.fight = { ring, f, sprite, seg: null, segT: 0, prev: null, stopping: false, crowd: 0 }
+  }
+
+  // a number for the referee's count
+  get countTexture() {
+    if (!this._count) {
+      this._count = [1, 2, 3].map((n) => {
+        const cv = document.createElement('canvas')
+        cv.width = cv.height = 128
+        const g = cv.getContext('2d')
+        g.fillStyle = '#ffd60a'; g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2); g.fill()
+        g.lineWidth = 8; g.strokeStyle = '#111'; g.stroke()
+        g.fillStyle = '#111'; g.font = '900 84px Arial Black, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 64, 70)
+        const t = new THREE.CanvasTexture(cv)
+        t.colorSpace = THREE.SRGBColorSpace
+        return t
+      })
+    }
+    return this._count
+  }
+
+  // put a fighter where the pose says (the pose is in the ring: x along the road, z across, y up)
+  placeFighter(fr, ring, pose, k, walk = 0) {
+    const [wx, wz] = this.ringPoint(ring, pose.x, pose.z)
+    const face = [ring.u[0] * Math.cos(pose.yaw) + ring.v[0] * Math.sin(pose.yaw), ring.u[1] * Math.cos(pose.yaw) + ring.v[1] * Math.sin(pose.yaw)]
+    const u = fr.p.userData
+    fr.p.position.set(wx, 0.1 + pose.y, wz)
+    fr.p.rotation.set(pose.pitch, Math.atan2(face[0], face[1]), pose.roll)
+    u.arms[0].rotation.x = pose.arms[0] + Math.sin(walk) * 0.7
+    u.arms[1].rotation.x = pose.arms[1] - Math.sin(walk) * 0.7
+    u.legs[0].rotation.x = pose.legs[0] + Math.sin(walk) * 0.75
+    u.legs[1].rotation.x = pose.legs[1] - Math.sin(walk) * 0.75
+    fr.p.scale.setScalar(1.05 * Math.max(0.001, k))
+    fr.at = { x: wx, z: wz, lying: Math.abs(Math.sin(pose.pitch)) > 0.7 || pose.y > 0.5 }
+  }
+
+  // from one spot of the ring to another (walking out of the car, or back into it)
+  walkPose(from, to, f, yaw) {
+    return { x: from.x + (to.x - from.x) * f, z: from.z + (to.z - from.z) * f, y: 0, yaw, pitch: 0, roll: 0, arms: [0, 0], legs: [0, 0] }
   }
 
   updateCrashes(dt) {
     for (let i = this.crashes.length - 1; i >= 0; i--) {
-      const a = this.crashes[i]
-      a.t += dt
-      const lostCar = !a.front.active || !a.rear.active
-      if (a.phase === 'bump') {
-        if (lostCar || a.t > 15) { endCrash(a.front, a.rear); this.crashes.splice(i, 1); continue }
-        if (a.rear.crash && a.rear.crash.hit) { a.phase = 'fight'; a.t = 0; this.makeFighters(a) }
+      const c = this.crashes[i]
+      c.t += dt
+      if (c.phase === 'bump') { // the cars are still driving into each other
+        if (!c.a.active || !c.b.active || c.t > 25) { endCrash(c.a, c.b); this.crashes.splice(i, 1); continue }
+        if (c.a.crash && c.a.crash.hit) { c.phase = 'climb'; c.t = 0; this.makeFighters(c) }
         continue
       }
-      const spent = (this.odds[a.lot] || { spent: 0 }).spent
-      if (a.phase === 'fight' && !fightGoesOn(spent)) { a.phase = 'leave'; a.t = 0 }
-      const scale = a.phase === 'leave' ? Math.max(0.001, 1 - a.t / 0.7) : Math.min(1, a.t / 0.6 + 0.001)
-      for (const f of a.fighters) {
-        const u = f.p.userData
-        const t = this.clock.elapsedTime
-        const lunge = Math.max(0, Math.sin(t * 9 + f.j * 3.1)) * 0.08 * f.toward // steps in with each punch
-        const x = a.axis === 'x' ? f.along + lunge : f.lat
-        const z = a.axis === 'x' ? f.lat : f.along + lunge
-        f.p.position.set(x, 0.1 + Math.abs(Math.sin(t * 7 + f.j)) * 0.05, z)
-        f.p.rotation.y = a.axis === 'x' ? (f.toward > 0 ? Math.PI / 2 : -Math.PI / 2) : (f.toward > 0 ? 0 : Math.PI)
-        f.p.rotation.z = Math.sin(t * 8 + f.j) * 0.15
-        u.arms[0].rotation.x = -1.5 + Math.sin(t * 13 + f.j) * 0.9
-        u.arms[1].rotation.x = -1.5 + Math.sin(t * 13 + f.j + Math.PI) * 0.9
-        f.p.scale.setScalar(1.05 * scale)
+      const F = c.fight
+      const spent = (this.odds[c.lot] || { spent: 0 }).spent
+      if (!fightGoesOn(spent)) F.stopping = true // the county is back to zero: the fight is over as soon as the move they are in is done
+      const ring = F.ring
+      const st = stances()
+      const here = [st.f0, st.f1]
+      const doors = F.f.map((f) => this.ringOf(ring, f.door[0], f.door[1]))
+
+      if (c.phase === 'climb') { // out of the cars, over to each other
+        const k = Math.min(1, c.t / 1.5)
+        F.f.forEach((f, n) => {
+          const from = { x: doors[n][0], z: doors[n][1] }
+          const yaw = n === 0 ? 0 : Math.PI
+          this.placeFighter(f, ring, this.walkPose(from, here[n], k * k * (3 - 2 * k), yaw), Math.min(1, c.t / 0.35), c.t * 9)
+        })
+        if (k >= 1) { c.phase = 'fight'; F.segT = 0; F.seg = null }
+      } else if (c.phase === 'fight') {
+        if (!F.seg) F.seg = nextSegment(F.prev, this.rng, F.f.some((f) => f.roof.ok))
+        F.segT += dt
+        if (F.segT >= F.seg.dur) {
+          if (F.stopping) { c.phase = 'peace'; c.t = 0 } else { F.prev = F.seg; F.seg = null; F.segT = 0 }
+        }
+        if (F.seg) {
+          const attacker = F.seg.swap ? 1 : 0 // the one who climbs on a roof: the car on his side
+          const r = F.f[attacker].roof
+          const pose = poseAt(F.seg, Math.min(F.segT, F.seg.dur), { roof: r.ok ? { x: r.x, z: r.z, y: r.y } : null })
+          this.placeFighter(F.f[0], ring, pose.f0, 1)
+          this.placeFighter(F.f[1], ring, pose.f1, 1)
+          F.count = pose.count
+        }
+      } else if (c.phase === 'peace') { // they shake hands
+        const k = Math.min(1, c.t / 1.3)
+        const shake = Math.sin(Math.min(1, k * 1.4) * Math.PI)
+        F.f.forEach((f, n) => {
+          const pose = { ...here[n], arms: [0, -1.45 * shake], legs: [0, 0] }
+          pose.x = here[n].x + (n === 0 ? 1 : -1) * 0.04 * shake
+          this.placeFighter(f, ring, pose, 1)
+        })
+        F.count = null
+        if (c.t >= 1.5) { c.phase = 'return'; c.t = 0 }
+      } else if (c.phase === 'return') { // back to the cars
+        const k = Math.min(1, c.t / 1.5)
+        F.f.forEach((f, n) => {
+          const to = { x: doors[n][0], z: doors[n][1] }
+          const yaw = Math.atan2(to.z - here[n].z, to.x - here[n].x)
+          this.placeFighter(f, ring, this.walkPose(here[n], to, k * k * (3 - 2 * k), yaw), Math.min(1, (1.5 - c.t) / 0.35 + 0.001), c.t * 9)
+        })
+        F.count = null
+        if (c.t >= 1.5) {
+          for (const f of F.f) this.disposePart(f.p)
+          this.disposePart(F.sprite)
+          endCrash(c.a, c.b)
+          this.crashes.splice(i, 1)
+          continue
+        }
       }
-      if (a.phase === 'leave' && a.t >= 0.7) {
-        for (const f of a.fighters) this.disposePart(f.p)
-        endCrash(a.front, a.rear)
-        this.crashes.splice(i, 1)
+      // the referee's count floats above them
+      F.sprite.visible = !!F.count
+      if (F.count) {
+        F.sprite.material.map = this.countTexture[F.count - 1]
+        const [sx, sz] = this.ringPoint(ring, 0.1, 0)
+        F.sprite.position.set(sx, 2.0 + Math.sin(c.t * 8) * 0.04, sz)
       }
     }
     // the fighters are in the way of anybody walking on that footpath
-    this.traffic.blockers = this.crashes.flatMap((a) => (a.fighters || []).map((f) => ({ active: true, road: a.axis + Math.sign(f.lat), t: f.along, lat: f.lat, goal: f.lat, hw: 0.3, hl: 0.32, dir: 0, speed: 0 })))
+    this.traffic.blockers = this.crashes.flatMap((c) => (c.fight ? c.fight.f.filter((f) => f.at) : []).map((f) => {
+      const t = c.axis === 'x' ? f.at.x : f.at.z, lat = c.axis === 'x' ? f.at.z : f.at.x
+      return { active: true, road: c.axis + Math.sign(lat), t, lat, goal: lat, hw: f.at.lying ? 0.45 : 0.3, hl: f.at.lying ? 0.75 : 0.32, dir: 0, speed: 0 }
+    }))
     this.crashClock += dt
     if (this.crashClock >= 0.5) {
       this.crashClock = 0
@@ -947,7 +1051,7 @@ export class CityScene {
       if (m.geometry.type === 'BoxGeometry') {
         const turned = Math.abs(Math.sin(e.y)) > 0.7
         const w = (turned ? par.depth * s.z : par.width * s.x), d = (turned ? par.width * s.x : par.depth * s.z), h = par.height * s.y
-        out.push({ mesh: m, kind: 'box', cx: p.x, cy: p.y, cz: p.z, w, d, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat && quarter })
+        out.push({ mesh: m, kind: 'box', cx: p.x, cy: p.y, cz: p.z, w, d, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat && quarter, win: m.userData.win })
       } else if (m.geometry.type === 'CylinderGeometry') {
         const h = par.height * s.y
         out.push({ mesh: m, kind: 'cyl', cx: p.x, cy: p.y, cz: p.z, rt: par.radiusTop * s.x, rb: par.radiusBottom * s.x, seg: par.radialSegments, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat })
@@ -1012,8 +1116,8 @@ export class CityScene {
     const wallMeshes = new Set(plan.walls.map((w) => w.d.mesh))
     g.visible = true
     g.traverse((n) => { if (n.isMesh && !wallMeshes.has(n)) n.visible = false })
-    const top = new THREE.Plane(new THREE.Vector3(0, -1, 0), -1e4)
-    B.clipTop = top
+    const top = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1e4) // keeps what is above the painters' edge (nothing at first)
+    B.clipLow = top
     B.clipped = []
     const toWorldY = (y) => site.localToWorld(new THREE.Vector3(0, y, 0)).y
     B.toWorldY = toWorldY
@@ -1094,13 +1198,43 @@ export class CityScene {
     for (let s = 0; s < 2; s++) B.painters.push(this.makeCrewman(lot, 'painter', 4 + s, tl.kit))
     B.crew = [...B.layers, ...B.painters]
 
-    // pieces that are fitted (new) and lifted off (old roof)
+    // everything that is put in place by something other than a bricklayer: the fence, pit and footing, the frame, and the pieces of the model
+    B.items = []
+    const addItem = (mesh, spec, h, top, by) => B.items.push({ mesh, mode: spec.mode, start: spec.start, dur: spec.dur, by, h, top, pos: mesh.position.clone(), scale: mesh.scale.clone(), done: false })
+    const prop = (spec) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(spec.w, spec.h, spec.d), L(spec.color))
+      m.position.set(spec.x, spec.y, spec.z)
+      m.castShadow = m.receiveShadow = true
+      m.visible = false
+      site.add(m)
+      addItem(m, spec, spec.h, spec.y + spec.h / 2)
+    }
+    if (tl.site) { tl.site.fence.forEach(prop); prop(tl.site.pit); prop(tl.site.footing) }
+    tl.frame.forEach(prop)
     for (const p of tl.pieces) {
-      const m = p.d.mesh
-      g.attach(m)
-      B.pieces.push({ ...p, mesh: m, pos: m.position.clone(), scale: m.scale.clone(), done: false })
+      g.attach(p.d.mesh)
+      addItem(p.d.mesh, p, p.d.h, p.d.top, p.by)
     }
     for (const r of tl.removes) B.removes.push({ ...r, mesh: r.d.mesh, y0: r.d.mesh.position.y, done: false })
+    // the window panes, all in one drawing
+    B.paneShown = 0
+    B.paneDone = []
+    if (tl.panes.length) {
+      const glass = L(0xffffff)
+      glass.userData.outlineParameters = { visible: false }
+      B.panes = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), glass, tl.panes.length)
+      B.panes.frustumCulled = false
+      B.panes.count = 0
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color()
+      tl.panes.forEach((p, i) => {
+        m4.compose(new THREE.Vector3(p.x, p.y, p.z), q, new THREE.Vector3(p.sx * 0.25, p.sy * 0.25, p.sz * 0.25))
+        B.panes.setMatrixAt(i, m4)
+        B.panes.setColorAt(i, col.setHex(p.glass))
+      })
+      B.panes.instanceMatrix.needsUpdate = true
+      if (B.panes.instanceColor) B.panes.instanceColor.needsUpdate = true
+      site.add(B.panes)
+    }
     B.rope = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1, 0.03), L(0x2b2b2b))
     B.rope.visible = false
     this.world.add(B.rope)
@@ -1153,9 +1287,9 @@ export class CityScene {
       if (B.studs) B.studs.count = B.landed * 2
     }
 
-    // the finished wall shows up behind the bricklayers
-    const clip = claddingHeight(tl, t)
-    B.clipTop.constant = B.toWorldY(clip)
+    // the painters bring the finished wall down from the top
+    const edge = paintEdge(tl, t)
+    B.clipLow.constant = -B.toWorldY(edge)
     for (const w of B.plan.walls) if (w.bot) w.bot.constant = -B.toWorldY(w.from)
 
     // workers: where they stand, which way they face, what the arms do
@@ -1167,6 +1301,7 @@ export class CityScene {
       c.p.scale.setScalar(c.size * crewK)
     }
     const feetAt = (y) => { const k = Math.max(0, Math.floor((y - 0.3) / LIFT)); this.platform(B, k); return [k, site.localToWorld(tmp2.set(0, k * LIFT + 0.04, 0)).y] }
+    const yardSpot = (i) => tmp.set(lot.pos.x + (0.9 + 0.35 * i) * lot.size, 0.1, lot.pos.z - (0.9 - 0.2 * i) * lot.size)
     B.layers.forEach((c, s) => {
       const list = B.sides[s]
       while (B.ptr[s] < list.length && list[B.ptr[s]].land <= t) B.ptr[s]++
@@ -1174,53 +1309,57 @@ export class CityScene {
       const ref = cur || last
       const fly = B.fly[s]
       fly.visible = false
-      if (!ref) return
+      const u = c.p.userData
+      if (!ref || t < tl.brickStart - 0.4) { // waiting at the yard while the site is made ready and the frame goes up
+        const y = yardSpot(s)
+        moveTo(c, y.x, 0.1, y.z, -1, 1)
+        u.arms[0].rotation.x = u.arms[1].rotation.x = -0.4
+        return
+      }
       const [, fy] = feetAt(ref.y)
       site.localToWorld(tmp.set(ref.x + ref.nx * 0.55, 0, ref.z + ref.nz * 0.55))
-      const out = tmp2.set(ref.nx, 0, ref.nz)
       moveTo(c, tmp.x, fy, tmp.z, -ref.nx, -ref.nz)
-      const u = c.p.userData
       const k = cur && t >= cur.start ? (t - cur.start) / Math.max(0.03, cur.land - cur.start) : 1
       u.arms[0].rotation.x = -0.9
       u.arms[1].rotation.x = -1.25 + Math.sin(k * Math.PI) * 0.4 // reaches to the wall, lays, comes back
       if (cur && t >= cur.start && t < cur.land) { // the brick travels the short way from the hand to its place
-        const hand = site.worldToLocal(new THREE.Vector3(c.p.position.x, c.p.position.y + 0.95 * c.size * crewK, c.p.position.z).addScaledVector(out, 0))
-        const f = k
-        fly.position.set(hand.x + (cur.x - hand.x) * f, hand.y + (cur.y - hand.y) * f, hand.z + (cur.z - hand.z) * f)
+        const hand = site.worldToLocal(new THREE.Vector3(c.p.position.x, c.p.position.y + 0.95 * c.size * crewK, c.p.position.z))
+        fly.position.set(hand.x + (cur.x - hand.x) * k, hand.y + (cur.y - hand.y) * k, hand.z + (cur.z - hand.z) * k)
         fly.rotation.set(0, cur.ry, 0)
         fly.scale.set(cur.sx, cur.sy, cur.sz)
         fly.material.color.setHex((BRICK_KITS[this.T.id] || BRICK_KITS.city).colors[cur.ci])
         fly.visible = true
       }
     })
+    const centre = B.scaf ? [(B.scaf.x0 + B.scaf.x1) / 2, (B.scaf.z0 + B.scaf.z1) / 2] : [0, 0]
     B.painters.forEach((c, i) => {
       const u = c.p.userData
-      const hand = B.pieces.find((p) => p.mode === 'hand' && p.by === i && t >= p.start - 0.7 && t <= p.start + p.dur + 0.15)
-      if (hand) { // fitting something small
-        const d = hand.pos
-        const [, fy] = feetAt(d.y)
-        site.localToWorld(tmp.set(d.x, 0, d.z))
-        const away = tmp2.set(d.x - (B.scaf ? (B.scaf.x0 + B.scaf.x1) / 2 : 0), 0, d.z - (B.scaf ? (B.scaf.z0 + B.scaf.z1) / 2 : 0))
-        away.normalize()
+      const item = B.items.find((p) => p.mode === 'hand' && p.by === i && t >= p.start - 0.7 && t <= p.start + p.dur + 0.15) // something small to set in place
+      let pane = null
+      if (!item) for (let k = Math.max(0, B.paneShown - 14); k < Math.min(tl.panes.length, B.paneShown + 3); k++) if (k % 2 === i && t >= tl.panes[k].start - 0.25 && t <= tl.panes[k].start + tl.panes[k].dur + 0.3) { pane = tl.panes[k]; break }
+      const at = item ? item.pos : pane ? { x: pane.x, y: pane.y, z: pane.z } : null
+      if (at) { // fitting a window, or something small: beside it, on the platform
+        const [, fy] = feetAt(at.y)
+        site.localToWorld(tmp.set(at.x, 0, at.z))
+        const away = tmp2.set(at.x - centre[0], 0, at.z - centre[1]).normalize()
         moveTo(c, tmp.x + away.x * 0.6, B.scaf ? fy : 0.1, tmp.z + away.z * 0.6, -away.x, -away.z)
-        u.arms[1].rotation.x = -1.3 + Math.sin((t - hand.start) * 9) * 0.3
+        u.arms[1].rotation.x = -1.3 + Math.sin(t * 9) * 0.3
         u.arms[0].rotation.x = -0.9
-      } else if (B.scaf && t >= tl.brickStart) { // painting: up and down the wall, where the finished wall is just showing
+      } else if (B.scaf && t >= tl.paintStart && t <= tl.paintEnd + 0.3) { // painting, from the top down, at the edge of the finished wall
         const s = i === 0 ? 0 : 2
         const sc = B.scaf
         const along = Math.sin(t * 0.8 + i * 2) * 0.7
-        const x = s === 0 ? (sc.x0 + sc.x1) / 2 + along * (sc.x1 - sc.x0) / 2 : (sc.x0 + sc.x1) / 2 - along * (sc.x1 - sc.x0) / 2
+        const x = s === 0 ? centre[0] + along * (sc.x1 - sc.x0) / 2 : centre[0] - along * (sc.x1 - sc.x0) / 2
         const z = s === 0 ? sc.z1 - 0.1 : sc.z0 + 0.1
-        const [, fy] = feetAt(Math.max(clip - 0.2, 0.3))
+        const [, fy] = feetAt(Math.max(edge + 0.35, 0.3))
         site.localToWorld(tmp.set(x, 0, z))
         moveTo(c, tmp.x, fy, tmp.z, 0, s === 0 ? -1 : 1)
         u.arms[1].rotation.x = -1.3 + Math.sin(t * 7 + i) * 0.6
         u.arms[0].rotation.x = -0.5
       } else {
-        const yard = tmp.set(lot.pos.x + 0.9 * lot.size, 0.1, lot.pos.z - 0.9 * lot.size)
-        moveTo(c, yard.x, 0.1, yard.z, -1, 1)
-        u.arms[1].rotation.x = -0.4
-        u.arms[0].rotation.x = -0.4
+        const y = yardSpot(4 + i)
+        moveTo(c, y.x, 0.1, y.z, -1, 1)
+        u.arms[1].rotation.x = u.arms[0].rotation.x = -0.4
       }
     })
 
@@ -1228,37 +1367,58 @@ export class CityScene {
     if (B.scaf) {
       B.scaf.grow += ((t < tl.end - 0.8 ? 1 : 0) - B.scaf.grow) * Math.min(1, dt * 6)
       B.scaf.group.scale.set(1, Math.max(0.001, B.scaf.grow), 1)
-      B.scaf.group.visible = t >= tl.removes.reduce((m, r) => Math.max(m, r.start + r.dur), 0) * 0.8
+      B.scaf.group.visible = t >= tl.scaffoldAt
     }
 
-    // pieces: slabs poured, small things set in by hand, big things hoisted by the crane
+    // the site, the frame and the pieces: slabs and columns poured or risen, small things set in by hand, big things hoisted by the crane
     const cu = lot.crane && lot.crane.userData
     let load = null
-    for (const p of B.pieces) {
+    for (const p of B.items) {
       if (p.done || t < p.start) continue
       const f = Math.min(1, (t - p.start) / p.dur)
       const m = p.mesh
       m.visible = true
-      if (p.mode === 'pour') {
-        m.scale.set(p.scale.x, Math.max(0.02, p.scale.y * f), p.scale.z)
-        m.position.y = p.pos.y - (p.scale.y * (1 - Math.max(0.02, f))) * (p.d.h / 2)
+      if (p.mode === 'pour') { // grows up from the ground
+        const s = Math.max(0.02, f)
+        m.scale.set(p.scale.x, p.scale.y * s, p.scale.z)
+        m.position.y = p.pos.y - (p.h / 2) * (1 - s)
       } else if (p.mode === 'hand') {
         const e = f * f * (3 - 2 * f)
         m.scale.set(p.scale.x * (0.3 + 0.7 * e), p.scale.y * (0.3 + 0.7 * e), p.scale.z * (0.3 + 0.7 * e))
       } else if (lot.crane) {
         const aim = site.localToWorld(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z))
-        const yard = new THREE.Vector3(lot.crane.position.x - 0.9, 0.1 + p.d.h * 0.5, lot.crane.position.z + 0.9)
-        const hoist = Math.max(aim.y + 0.7, B.toWorldY(Math.max(tl.topAll, p.d.top)) + 0.9)
+        const yard = new THREE.Vector3(lot.crane.position.x - 0.9, 0.1 + p.h * 0.5, lot.crane.position.z + 0.9)
+        const hoist = Math.max(aim.y + 0.7, B.toWorldY(Math.max(tl.topAll, p.top)) + 0.9)
         let x, y, z
         if (f < 0.12) { x = yard.x; z = yard.z; y = yard.y } // waiting for the hook
         else if (f < 0.45) { const e = (f - 0.12) / 0.33; x = yard.x; z = yard.z; y = yard.y + (hoist - yard.y) * (e * e * (3 - 2 * e)) } // up
-        else if (f < 0.75) { const e = (f - 0.45) / 0.3, s = e * e * (3 - 2 * e); x = yard.x + (aim.x - yard.x) * s; z = yard.z + (aim.z - yard.z) * s; y = hoist } // across
-        else { const e = (f - 0.75) / 0.25, s = e * e * (3 - 2 * e); x = aim.x; z = aim.z; y = hoist + (aim.y - hoist) * s } // down
+        else if (f < 0.75) { const e = (f - 0.45) / 0.3, sm = e * e * (3 - 2 * e); x = yard.x + (aim.x - yard.x) * sm; z = yard.z + (aim.z - yard.z) * sm; y = hoist } // across
+        else { const e = (f - 0.75) / 0.25, sm = e * e * (3 - 2 * e); x = aim.x; z = aim.z; y = hoist + (aim.y - hoist) * sm } // down
         m.position.copy(g.worldToLocal(new THREE.Vector3(x, y, z)))
-        load = { x, y, z, top: y + p.d.h / 2 * g.scale.y }
+        load = { x, y, z, top: y + (p.h / 2) * g.scale.y }
       }
       if (f >= 1) { p.done = true; m.position.copy(p.pos); m.scale.copy(p.scale) }
     }
+
+    // the windows are fitted one after the other, popping into their gaps
+    if (B.panes) {
+      const P = tl.panes
+      while (B.paneShown < P.length && P[B.paneShown].start <= t) B.paneShown++
+      B.panes.count = B.paneShown
+      const m4 = new THREE.Matrix4(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), q = new THREE.Quaternion()
+      let touched = false
+      for (let i = Math.max(0, B.paneShown - 16); i < B.paneShown; i++) {
+        const f = Math.min(1, (t - P[i].start) / P[i].dur)
+        if (f >= 1 && B.paneDone[i]) continue
+        const e = 0.25 + 0.75 * f * f * (3 - 2 * f)
+        m4.compose(pos.set(P[i].x, P[i].y, P[i].z), q, sc.set(P[i].sx * e, P[i].sy * e, P[i].sz * e))
+        B.panes.setMatrixAt(i, m4)
+        if (f >= 1) B.paneDone[i] = true
+        touched = true
+      }
+      if (touched) B.panes.instanceMatrix.needsUpdate = true
+    }
+
     if (cu) { // the crane arm swings to its load, or rests
       const cx = lot.crane.position.x, cz = lot.crane.position.z
       const aimX = load ? load.x : lot.pos.x - 0.55 * lot.size, aimZ = load ? load.z : lot.pos.z - 0.55 * lot.size
@@ -1284,10 +1444,11 @@ export class CityScene {
       const { g, old, site, plan } = B
       g.traverse((n) => { if (n.isMesh) n.visible = true })
       for (const mm of B.clipped) { mm.clippingPlanes = null; delete mm.userData.outlineParameters; mm.needsUpdate = true }
-      for (const p of B.pieces) { p.mesh.position.copy(p.pos); p.mesh.scale.copy(p.scale) }
+      for (const p of B.items) { p.mesh.position.copy(p.pos); p.mesh.scale.copy(p.scale) }
       if (old) this.disposePart(old.g)
       if (B.inst) B.inst.dispose()
       if (B.studs) B.studs.dispose()
+      if (B.panes) B.panes.dispose()
       this.disposePart(site)
       this.disposePart(B.rope)
       for (const c of B.crew) this.disposePart(c.p)
@@ -1314,7 +1475,7 @@ export class CityScene {
   buildWalkers() {
     const rng = this.rng
     const P = this.T.people
-    this.walkers = placeWalkers(this.ring2 ? 12 : 8, rng)
+    this.walkers = placeWalkers(this.ring2 ? 12 : 8, rng, this.E - 15)
     this.walkers.forEach((w) => {
       const p = makePerson(rng)
       Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
@@ -1345,8 +1506,8 @@ export class CityScene {
     for (let i = 0; i < 3; i++) this.spawnVehicle(true)
   }
 
-  spawnVehicle(anywhere = false) {
-    const c = spawnCar(this.cars, this.rng, anywhere)
+  spawnVehicle(anywhere = false, prefer = null) {
+    const c = spawnCar(this.cars, this.rng, anywhere, prefer)
     if (c) c.car.visible = true
   }
 
@@ -1408,6 +1569,7 @@ export class CityScene {
     this.crashes = []
     this.crashClock = 0
     this.crashDue = false
+    this.hunt = null
     this.odds = []
     this.E = HALF[this.ring2 ? 1 : 0]
     this.traffic = makeTraffic(this.E - 15)
@@ -1855,7 +2017,11 @@ export class CityScene {
     }
     // vehicles come in one end and leave at the other
     this.spawnIn -= dt
-    if (this.spawnIn <= 0) { this.spawnIn = 2.6 + this.rng() * 3; this.spawnVehicle() }
+    if (this.spawnIn <= 0) {
+      const hunt = this.hunt && this.lots[this.hunt.lot].road // a crash is due on this street: more cars come down it
+      this.spawnIn = hunt ? 0.9 + this.rng() * 0.9 : 2.6 + this.rng() * 3
+      this.spawnVehicle(false, hunt ? { axis: hunt.axis } : null)
+    }
     for (const c of this.cars) {
       c.car.visible = c.active
       if (!c.active) continue
