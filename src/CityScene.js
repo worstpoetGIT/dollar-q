@@ -229,40 +229,6 @@ function makeTruck(color = 0xf08a24) {
   return g
 }
 
-// a small swimming fish for the pavements of the ocean map. it faces +z like a person does, and its tail pivot wags.
-function makeFish(color, rng) {
-  const g = new THREE.Group()
-  const body = mk(g, new THREE.SphereGeometry(0.2, 10, 8), color, 0, 0, 0)
-  body.scale.set(0.55, 0.85, 1.6)
-  const tail = new THREE.Group()
-  tail.position.set(0, 0, -0.3)
-  g.add(tail)
-  const fin = mk(tail, new THREE.ConeGeometry(0.16, 0.26, 4), shade(color, -0.12), 0, 0, -0.12)
-  fin.rotation.x = -Math.PI / 2 // the tip trails behind
-  fin.scale.x = 0.35
-  mk(g, new THREE.ConeGeometry(0.08, 0.15, 4), shade(color, 0.12), 0, 0.17, -0.02) // the fin on its back
-  for (const sx of [-1, 1]) mk(g, new THREE.SphereGeometry(0.035, 6, 5), 0x111111, sx * 0.075, 0.05, 0.25, false)
-  g.userData = { fish: true, tail, body }
-  g.scale.setScalar(1.5 + rng() * 0.6)
-  return g
-}
-
-// a diver: a person in a wetsuit with a mask, an air tank and flippers (used for walking, felling trees and fighting on the ocean map)
-function makeDiver(rng) {
-  const g = makePerson(rng)
-  const u = g.userData
-  u.hat.visible = false
-  u.hands.forEach((h) => h.material.color.set(0x222222))
-  mk(g, new THREE.BoxGeometry(0.23, 0.09, 0.05), 0x8fe3ff, 0, 1.02, 0.15, false) // the mask
-  bx(g, 0.26, 0.03, 0.04, 0x111111, 0, 1.02, 0.13)
-  cyl(g, 0.075, 0.42, 0xf4a000, 0, 0.3, -0.17, 10) // the air tank
-  bx(g, 0.05, 0.08, 0.05, 0x777777, 0, 0.74, -0.17)
-  for (const leg of u.legs) bx(leg, 0.14, 0.03, 0.3, 0x111111, 0, -0.47, 0.16) // flippers
-  g.rotation.order = 'YXZ'
-  u.diver = true
-  return g
-}
-
 function makePerson(rng) {
   const g = new THREE.Group()
   const skin = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac][Math.floor(rng() * 5)]
@@ -458,12 +424,6 @@ export class CityScene {
       const grid = new THREE.GridHelper(2 * E, 2 * E, C.road, C.pad)
       grid.position.y = 0.02
       s.add(grid)
-    }
-    if (T.zone) {
-      const zone = mk(s, new THREE.RingGeometry(E - 1.8, E - 1.5, 64), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }), 0, 0.3, 0, false)
-      zone.rotation.x = -Math.PI / 2
-      const wallz = mk(s, new THREE.CylinderGeometry(E - 1.65, E - 1.65, 3, 64, 1, true), new THREE.MeshBasicMaterial({ color: 0x3aa0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.12, depthWrite: false }), 0, 1.8, 0, false)
-      wallz.renderOrder = 2
     }
     if (T.studs) {
       const pts = []
@@ -704,18 +664,6 @@ export class CityScene {
       cyl(g, 0.05, 1.3 * sc, C.trunk, 0, 0, 0, 5)
       const o = mk(g, new THREE.OctahedronGeometry(0.42 * sc, 0), type === 'p' ? m.pine : m.round, 0, 1.6 * sc, 0, false)
       o.scale.y = 1.5
-    } else if (kind === 'coral') {
-      if (type === 'p') {
-        for (const [ox, oz, hh] of [[0, 0, 1.9], [0.25, 0.1, 1.4], [-0.2, 0.2, 1.6]]) mk(g, new THREE.ConeGeometry(0.1 * sc, hh * sc, 5), m.pine, ox, hh * sc / 2, oz)
-      } else {
-        const mat = [m.round, m.blossom][Math.floor(this.rng() * 2)]
-        cyl(g, 0.13 * sc, 0.9 * sc, mat, 0, 0, 0, 6)
-        for (const [rz, ox] of [[0.7, -0.3], [-0.7, 0.3]]) {
-          const br = cyl(g, 0.09 * sc, 0.7 * sc, mat, ox * sc, 0.5 * sc, 0, 6)
-          br.rotation.z = rz
-        }
-        mk(g, new THREE.SphereGeometry(0.2 * sc, 8, 6), mat, 0, 0.95 * sc, 0)
-      }
     } else if (kind === 'snow') {
       if (type === 'p') {
         cyl(g, 0.12, 0.6 * sc, C.trunk, 0, 0, 0, 6)
@@ -1010,7 +958,8 @@ export class CityScene {
   makeCrewman(lot, role, k, kit) {
     const p = this.folk()
     const u = p.userData
-    if (!u.diver) { u.hat.visible = true; u.hat.material.color.set(0xffd60a) }
+    u.hat.visible = true
+    u.hat.material.color.set(0xffd60a)
     const [sx, sz] = treeSpot(lot.pos.x, lot.pos.z, k)
     p.position.set(sx + (lot.pos.x - sx) * 0.4, 0.1, sz + (lot.pos.z - sz) * 0.4)
     p.scale.setScalar(0.001)
@@ -1351,23 +1300,17 @@ export class CityScene {
     this.nextBuild(lot)
   }
 
-  // somebody to work or fight: a person, or a diver under the sea
+  // somebody to work or fight
   folk() {
-    return this.sea ? makeDiver(this.rng) : makePerson(this.rng)
+    return makePerson(this.rng)
   }
 
   buildWalkers() {
     const rng = this.rng
     const P = this.T.people
     this.walkers = placeWalkers(this.ring2 ? 12 : 8, rng)
-    this.walkers.forEach((w, n) => {
-      if (this.sea && n % 2 === 0) { // every other one is a fish
-        const fish = makeFish(P.fish[Math.floor(rng() * P.fish.length)], rng)
-        Object.assign(w, { p: fish, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: 0 })
-        this.world.add(fish)
-        return
-      }
-      const p = this.sea ? makeDiver(rng) : makePerson(rng)
+    this.walkers.forEach((w) => {
+      const p = makePerson(rng)
       Object.assign(w, { p, ph: rng() * 6, ci: Math.floor(rng() * 6), pi: Math.floor(rng() * 3) })
       const u = p.userData
       if (P.skin) { u.skin = P.skin; u.head.material.color.set(P.skin); u.hands.forEach((h) => h.material.color.set(P.skin)) }
@@ -1377,7 +1320,7 @@ export class CityScene {
       u.sleeves.forEach((mm) => mm.material.color.set(coat))
       u.thighs.forEach((mm) => mm.material.color.set(pants))
       u.shins.forEach((mm) => mm.material.color.set(P.shorts ? u.skin : pants))
-      if (!u.diver) u.hat.visible = !!P.hat
+      u.hat.visible = !!P.hat
       if (P.hat) u.hat.material.color.set(P.hats ? P.hats[w.ci % P.hats.length] : P.hat)
       this.world.add(p)
     })
@@ -1439,7 +1382,6 @@ export class CityScene {
     this.map = name
     this.mapKey = key
     const T = (this.T = MAPS[key])
-    this.sea = T.people.kind === 'sea'
     TOON = !!T.toon
     WIRE = !!T.wire
     if (this.world) {
@@ -1891,29 +1833,12 @@ export class CityScene {
       const sw = Math.sin(w.ph) * k
       const u = w.p.userData
       let lift = 0.1 // how high above the ground
-      const t = this.clock.elapsedTime + w.ci * 1.7
-      if (u.fish) { // a fish never stands still: the tail keeps wagging while it waits, and it drifts up and down
-        const wag = Math.sin(t * (5 + k * 4))
-        u.tail.rotation.y = wag * 0.55
-        u.body.rotation.y = -wag * 0.12
-        lift = 0.55 + Math.sin(t * 1.4) * 0.09
-      } else if (u.diver) { // a diver really swims: lying flat, face down, arms stretched out in front, flippers kicking, drifting up and down
-        const kick = Math.sin(t * (6 + k * 3))
-        u.legs[0].rotation.x = kick * 0.45
-        u.legs[1].rotation.x = -kick * 0.45
-        u.arms[0].rotation.x = 3.0 + Math.sin(t * 2.2) * 0.35 // arms reach forward past the head and paddle gently
-        u.arms[1].rotation.x = 3.0 - Math.sin(t * 2.2) * 0.35
-        w.p.rotation.x = 1.4 + Math.sin(t * 1.3) * 0.1 // nearly horizontal, the body undulates a little
-        w.p.rotation.z = Math.sin(t * 2.2) * 0.12 // and rolls from side to side with the strokes
-        lift = 0.75 + Math.sin(t * 1.1) * 0.18 // floating in the water, not walking on the ground
-      } else {
-        u.legs[0].rotation.x = sw * 0.75
-        u.legs[1].rotation.x = -sw * 0.75
-        u.arms[0].rotation.x = -sw * 0.6
-        u.arms[1].rotation.x = sw * 0.6
-        u.torso.rotation.y = sw * 0.08
-        lift += Math.abs(Math.cos(w.ph)) * 0.045 * k
-      }
+      u.legs[0].rotation.x = sw * 0.75
+      u.legs[1].rotation.x = -sw * 0.75
+      u.arms[0].rotation.x = -sw * 0.6
+      u.arms[1].rotation.x = sw * 0.6
+      u.torso.rotation.y = sw * 0.08
+      lift += Math.abs(Math.cos(w.ph)) * 0.045 * k
       const bob = lift - 0.1
       const heading = w.axis === 'x' ? (w.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (w.dir > 0 ? 0 : Math.PI) // the way they walk
       if (w.face === undefined) w.face = heading
@@ -1972,8 +1897,6 @@ const BRICK_KITS = {
   japan: { colors: [0x8b5a2b, 0xb08968, 0xd9c7a0], shape: 'plank' },
   ice: { colors: [0xcfeeff, 0xe8f6ff, 0xaee1ff], shape: 'cube' },
   wire: { colors: [0x0a66c2, 0x0a8f3c, 0xc2187a], shape: 'cube' },
-  war: { colors: [0x9a8562, 0x7a6a4a, 0x5d6b3a], shape: 'sandbag' },
-  ocean: { colors: [0xff7f6e, 0xffd166, 0xc77dff], shape: 'shell' },
   court: { colors: [0xe8742a], shape: 'ball' },
 }
 

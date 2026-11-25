@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
+import { MAP_LIST } from './maps.js'
 import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareFor, splitShares } from './util.js'
 import { openNativeDb } from './db/native.js'
 import { ensureSchema } from './db/schema.js'
@@ -145,7 +146,7 @@ export function sanitize(raw) {
   return {
     v: 1, entered: raw.entered === true, setupDone: raw.setupDone === true, stateName: str(raw.stateName, 28),
     season: 'summer', appearance: oneOf(raw.appearance, ['system', 'light', 'dark'], 'system'), minimal: raw.minimal === true,
-    map: typeof raw.map === 'string' && /^[a-z]{2,12}$/.test(raw.map) ? raw.map : 'city',
+    map: typeof raw.map === 'string' && MAP_LIST.some((m) => m.id === raw.map) ? raw.map : 'city', // (a map that is gone, like ocean or war in old saves, becomes the classic city)
     currency: oneOf(raw.currency, CODES, accounts[0].currency), counties, methods, accounts, expenses, fixed,
   }
 }

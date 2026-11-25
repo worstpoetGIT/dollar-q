@@ -6,8 +6,6 @@ export const MAP_LIST = [
   { id: 'japan', name: 'Japan', sky: ['#8fd3ff', '#ffd6ea'], ground: '#8fd16a', road: '#5a6072', accent: ['#e63946', '#ffffff', '#ffb7d5'] },
   { id: 'ice', name: 'Ice Age', sky: ['#cfe6f7', '#f4faff'], ground: '#f4f9fd', road: '#a9d8f5', accent: ['#8b5a2b', '#cfeeff', '#ffffff'] },
   { id: 'wire', name: 'Wireframe', sky: ['#ffffff', '#ffffff'], ground: '#eef3f8', road: '#0a66c2', accent: ['#0a66c2', '#0a8f3c', '#c2187a'] },
-  { id: 'war', name: 'Warzone', sky: ['#d9dcc6', '#f1f1e4'], ground: '#7d8a4e', road: '#9a8562', accent: ['#5d6b3a', '#8a8f7a', '#c0392b'] },
-  { id: 'ocean', name: 'Under the Ocean', sky: ['#9fe0f5', '#e6f8fd'], ground: '#d9c58f', road: '#bfa873', accent: ['#ff7f6e', '#ffd166', '#4dd0e1'] },
   { id: 'court', name: 'Basketball Court', sky: ['#ffe3c2', '#fff5e8'], ground: '#d9a066', road: '#1d3f8a', accent: ['#e8742a', '#ffffff', '#c0392b'] },
 ]
 
@@ -63,54 +61,6 @@ export function makeMaps(h) {
       bx(g, 0.7, 0.8, 0.1, 0x3b2a20, 0, 0, 1.36)
       for (const sx of [-1, 1]) mk(g, new THREE.ConeGeometry(0.22, 0.9, 5), 0xbfe6fa, sx * 1.7, 0.45, 1.2)
     },
-    war(g, f, col, style) {
-      const v = variant(style)
-      const con = [0x9a9c8c, 0x8a8f7a, 0xa39e88][v]
-      if (v === 2) {
-        // watchtower
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.09, 0.9 + f * 0.75, 0x5a4a32, sx * 0.9, 0, sz * 0.9, 6)
-        for (let i = 1; i <= f; i++) bx(g, 2.0, 0.08, 2.0, 0x6b5a3e, 0, i * 0.75, 0)
-        const top = 0.9 + f * 0.75
-        bx(g, 2.4, 0.12, 2.4, 0x5a4a32, 0, top, 0)
-        bx(g, 2.4, 0.5, 0.1, 0x5d6b3a, 0, top + 0.12, 1.15)
-        bx(g, 2.4, 0.5, 0.1, 0x5d6b3a, 0, top + 0.12, -1.15)
-        bx(g, 0.1, 0.5, 2.4, 0x5d6b3a, 1.15, top + 0.12, 0)
-        bx(g, 0.1, 0.5, 2.4, 0x5d6b3a, -1.15, top + 0.12, 0)
-        bx(g, 2.7, 0.1, 2.7, col, 0, top + 1.3, 0)
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(g, 0.05, 1.2, 0x5a4a32, sx * 1.1, top + 0.12, sz * 1.1, 5)
-        return
-      }
-      const w = v ? 3.3 : 2.9, d = v ? 2.5 : 2.9
-      for (let i = 0; i < f; i++) {
-        bx(g, w, 0.72, d, i % 2 ? shade(con, -0.05) : con, 0, i * 0.75, 0)
-        bx(g, w + 0.08, 0.06, d + 0.08, 0x6f7163, 0, i * 0.75 + 0.69, 0)
-        bx(g, 0.5, 0.34, 0.05, 0x1c1f1a, -0.75, i * 0.75 + 0.2, d / 2 + 0.01)
-        bx(g, 0.5, 0.34, 0.05, 0x1c1f1a, 0.75, i * 0.75 + 0.2, d / 2 + 0.01)
-      }
-      const top = f * 0.75
-      bx(g, w + 0.1, 0.3, 0.14, con, 0, top, d / 2)
-      bx(g, w + 0.1, 0.3, 0.14, con, 0, top, -d / 2)
-      cyl(g, 0.04, 1.5, 0x3a3a3a, w / 2 - 0.3, top, 0, 5)
-      bx(g, 0.8, 0.45, 0.04, col, w / 2 - 0.72, top + 1.0, 0)
-      bx(g, 0.6, 0.85, 0.08, 0x3b2a20, 0, 0, d / 2 + 0.02)
-      for (const sx of [-1.2, -0.6]) bx(g, 0.55, 0.3, 0.3, 0xb5a67a, sx, 0, d / 2 + 0.5)
-    },
-    ocean(g, f, col) {
-      const r = 1.5
-      for (let i = 0; i < f; i++) {
-        cyl(g, r - (i % 2 ? 0.12 : 0), 0.7, i % 2 ? shade(col, 0.16) : col, 0, i * 0.72, 0, 18)
-        for (let k = 0; k < 4; k++) {
-          const a = k * Math.PI / 2 + (i % 2 ? Math.PI / 4 : 0)
-          mk(g, new THREE.SphereGeometry(0.16, 8, 6), N(0xfff3b0), Math.cos(a) * (r - 0.08), i * 0.72 + 0.36, Math.sin(a) * (r - 0.08), false)
-        }
-      }
-      const glass = new THREE.MeshLambertMaterial({ color: 0xa8e9ff, transparent: true, opacity: 0.62 })
-      mk(g, new THREE.SphereGeometry(r - 0.05, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), glass, 0, f * 0.72, 0, false)
-      for (const [x, z, c] of [[1.7, 1.2, 0xff7f6e], [-1.7, 1.0, 0xc77dff]]) {
-        cyl(g, 0.09, 0.7, c, x, 0, z, 6)
-        cyl(g, 0.07, 0.5, c, x + 0.2, 0.2, z, 6).rotation.z = -0.7
-      }
-    },
     court(g, f, col) {
       const fh = 0.64
       for (let i = 0; i < f; i++) bx(g, 3.2, fh - 0.03, 2.6, i % 2 ? 0xffffff : col, 0, i * fh, 0)
@@ -141,15 +91,6 @@ export function makeMaps(h) {
       bx(g, 0.5, 0.5, 0.5, 0x3b2a20, 0, 0, 0.8)
       bx(g, 0.56, 0.08, 0.56, col, 0, 0.5, 0.8)
     },
-    war(g, col) {
-      bx(g, 1.1, 0.7, 0.8, 0x5d6b3a, 0, 0, 0)
-      bx(g, 1.16, 0.14, 0.86, col, 0, 0.7, 0)
-      bx(g, 0.2, 0.2, 0.05, 0xf4c430, 0, 0.3, 0.42)
-    },
-    ocean(g, col) {
-      mk(g, new THREE.SphereGeometry(0.85, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), col, 0, 0, 0)
-      mk(g, new THREE.SphereGeometry(0.22, 10, 8), N(0xffffff), 0, 0.95, 0, false)
-    },
     court(g, col) {
       bx(g, 1.2, 0.3, 1.2, col, 0, 0, 0)
       mk(g, new THREE.SphereGeometry(0.42, 14, 10), 0xe8742a, 0, 0.72, 0)
@@ -159,17 +100,6 @@ export function makeMaps(h) {
   // vehicles
   const stud = (g, c, x, y, z) => cyl(g, 0.13, 0.08, c, x, y, z, 8)
   const legoCar = (c) => { const g = makeCar(c); stud(g, shade(c, 0.28), -0.25, 0.82, 0); stud(g, shade(c, 0.28), 0.1, 0.82, 0); return g }
-  const sub = (c) => {
-    const g = G()
-    const b = mk(g, new THREE.CapsuleGeometry(0.42, 1.2, 4, 10), c, 0, 0, 0)
-    b.rotation.z = Math.PI / 2
-    bx(g, 0.5, 0.4, 0.4, shade(c, -0.1), 0.1, 0.35, 0)
-    cyl(g, 0.04, 0.4, 0x555555, 0.2, 0.75, 0, 5)
-    for (const x of [-0.3, 0.3]) mk(g, new THREE.SphereGeometry(0.13, 8, 6), N(0xcfe8f5), x, 0.05, 0.4, false)
-    bx(g, 0.08, 0.5, 0.5, 0x555555, -1.05, -0.25, 0)
-    g.userData = { y: 1.3, bob: 0.16 }
-    return g
-  }
   const ball = () => {
     const g = G()
     const m = mk(g, new THREE.SphereGeometry(0.45, 16, 12), 0xe8742a, 0, 0, 0)
@@ -238,41 +168,12 @@ export function makeMaps(h) {
     return g
   }
 
-  const buggy = (c) => {
-    const g = G()
-    bx(g, 1.4, 0.2, 0.7, c, 0, 0.22, 0)
-    bx(g, 0.5, 0.3, 0.6, 0x2b2b2b, -0.1, 0.42, 0)
-    for (const x of [-0.25, 0.35]) for (const z of [-0.3, 0.3]) cyl(g, 0.03, 0.5, 0x3a3a3a, x, 0.42, z, 4)
-    bx(g, 0.7, 0.04, 0.66, 0x3a3a3a, 0.05, 0.92, 0)
-    for (const x of [-0.5, 0.5]) for (const z of [-0.38, 0.38]) bx(g, 0.34, 0.34, 0.16, 0x1a1a1a, x, 0, z)
-    return g
-  }
-  const uaz = (c) => { const g = makeCar(c); bx(g, 0.2, 0.36, 0.5, 0x1a1a1a, -0.78, 0.2, 0); return g }
-  const armored = () => {
-    const g = G()
-    bx(g, 2.3, 0.75, 1.0, 0x5d6b3a, 0, 0.2, 0)
-    bx(g, 1.0, 0.35, 0.8, 0x4a5630, -0.2, 0.95, 0)
-    cyl(g, 0.05, 0.9, 0x2b2b2b, 0.5, 1.05, 0, 6).rotation.z = -Math.PI / 2
-    for (const x of [-0.8, 0, 0.8]) for (const z of [-0.46, 0.46]) bx(g, 0.34, 0.34, 0.14, 0x1a1a1a, x, 0, z)
-    return g
-  }
-  const bike = () => {
-    const g = G()
-    bx(g, 0.9, 0.2, 0.16, 0x2b2b2b, 0, 0.26, 0)
-    for (const x of [-0.4, 0.4]) bx(g, 0.3, 0.3, 0.1, 0x1a1a1a, x, 0, 0)
-    bx(g, 0.26, 0.4, 0.3, 0x5d6b3a, -0.05, 0.44, 0)
-    mk(g, new THREE.SphereGeometry(0.13, 8, 6), 0x3f4a2a, -0.05, 0.98, 0)
-    return g
-  }
-
   const vehicles = {
     city: () => [makeCar(0xf4c430), makeCar(0xe63946), makeCar(0x2a9d8f), makeCar(0xffffff), makeCar(0x8e5bd9), makeCar(0x3b82f6), makeVan(), makeVan(0xfde68a), makeBus(), makeTruck(), makeBus(0xd9534f)],
     lego: () => [legoCar(0xe3000b), legoCar(0xffd500), legoCar(0x0057b8), legoCar(0x00852b), legoCar(0xffffff), legoCar(0xff7a00), makeBus(0xe3000b), makeTruck(0xffd500), makeVan(0x0057b8)],
     japan: () => [train(), kei(0xffb7d5), kei(0xa8e6cf), kei(0xfff3b0), kei(0xffffff), makeCar(0x2e8b57), makeCar(0xf4c430), ramen(), kei(0x9ad0ff), train()],
     ice: () => [mammoth(), mammoth(0x8d6e4a, 0.8), mammoth(0x6b4a2b, 1.1), saber(), saber(), sled(), sled(), mammoth(0x9a7b55, 0.6)],
     wire: () => vehicles.city(),
-    war: () => [buggy(0xc9a24b), buggy(0x8a8f7a), uaz(0x5d6b3a), uaz(0x7a6a4a), armored(), bike(), bike(), makeTruck(0x5d6b3a), uaz(0x3f4a2a)],
-    ocean: () => [0xf4c430, 0xff6b6b, 0x4dd0e1, 0x80ed99, 0xc77dff, 0xff8c42, 0xffffff, 0x3a86ff].map((c) => sub(c)), // only submarines
     court: () => [ball(), ball(), ball(), makeBus(0xc0392b), makeBus(0x1d3f8a), makeCar(0xffffff), ball()],
   }
 
@@ -319,57 +220,6 @@ export function makeMaps(h) {
       mk(s, new THREE.ConeGeometry(0.22, 0.6, 6), N(0xff9f1c), x + 1.5, 0.6, z + 1.5, false)
       for (const [ox, oz] of [[-1.7, 1.6], [-1.3, 1.9]]) bx(s, 0.08, 1.4, 0.08, 0xfdf6e3, x + ox, 0.2, z + oz).rotation.z = 0.5
     },
-    airdrop(s, x, z) {
-      bx(s, 4.6, 0.12, 4.6, 0x8a9558, x, 0.1, z)
-      bx(s, 1.1, 0.8, 0.9, 0x5d6b3a, x, 0.22, z)
-      bx(s, 1.16, 0.16, 0.96, 0xc0392b, x, 1.02, z)
-      const chute = mk(s, new THREE.SphereGeometry(1.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0xc0392b, x, 3.0, z)
-      chute.scale.y = 0.7
-      for (const [ox, oz] of [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) {
-        const r = cyl(s, 0.015, 2.1, 0xf1f5f9, x + ox / 2, 1.1, z + oz / 2, 4)
-        r.rotation.z = ox ? (ox > 0 ? -0.55 : 0.55) : 0
-        r.rotation.x = oz ? (oz > 0 ? 0.55 : -0.55) : 0
-      }
-      for (let i = 0; i < 4; i++) mk(s, new THREE.SphereGeometry(0.3 + i * 0.1, 8, 6), new THREE.MeshLambertMaterial({ color: 0xe5484d, transparent: true, opacity: 0.55 }), x + 1.5, 0.5 + i * 0.6, z + 1.4, false)
-    },
-    base(s, x, z) {
-      bx(s, 4.6, 0.12, 4.6, 0x8a9558, x, 0.1, z)
-      for (const [ox, c] of [[-1.2, 0x5d6b3a], [1.0, 0x6b7a44]]) {
-        const t = cyl(s, 0.9, 2.0, c, x + ox, 0.2, z - 0.8, 3)
-        t.rotation.x = Math.PI / 2
-        t.rotation.z = Math.PI / 2
-        t.position.y = 0.65
-      }
-      for (let i = 0; i < 5; i++) bx(s, 0.6, 0.3, 0.35, 0xb5a67a, x - 1.5 + i * 0.65, 0.22, z + 1.6)
-      for (let i = 0; i < 4; i++) bx(s, 0.6, 0.3, 0.35, 0xa8996e, x - 1.2 + i * 0.65, 0.52, z + 1.6)
-      cyl(s, 0.06, 2.4, 0x3a3a3a, x + 1.8, 0.2, z + 0.6, 5)
-      const dish = mk(s, new THREE.SphereGeometry(0.6, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2.4), 0xcfd3c4, x + 1.8, 2.7, z + 0.6)
-      dish.rotation.x = 2.2
-    },
-    wreck(s, x, z) {
-      bx(s, 4.6, 0.1, 4.6, 0xcbb682, x, 0.1, z)
-      const hull = bx(s, 3.4, 0.9, 1.3, 0x6e4623, x, 0.2, z)
-      hull.rotation.z = 0.16
-      hull.rotation.y = 0.5
-      const mast = cyl(s, 0.07, 3.0, 0x5c3b1c, x - 0.2, 0.8, z, 6)
-      mast.rotation.z = 0.3
-      const sail = bx(s, 0.04, 1.2, 1.3, 0xe8e1cf, x - 0.5, 2.0, z)
-      sail.rotation.z = 0.3
-      bx(s, 0.7, 0.45, 0.5, 0x8b5a2b, x + 1.5, 0.2, z + 1.4)
-      bx(s, 0.72, 0.12, 0.52, 0xf4c430, x + 1.5, 0.6, z + 1.4)
-    },
-    reef(s, x, z) {
-      bx(s, 4.6, 0.1, 4.6, 0xcbb682, x, 0.1, z)
-      const cols = [0xff7f6e, 0xc77dff, 0xffd166, 0xff5d8f, 0x4dd0e1]
-      for (let i = 0; i < 9; i++) {
-        const a = i * 2.4, r = 0.5 + (i % 3) * 0.6
-        const c = cols[i % 5]
-        const hh = 0.6 + (i % 4) * 0.35
-        cyl(s, 0.12, hh, c, x + Math.cos(a) * r, 0.18, z + Math.sin(a) * r, 6)
-        mk(s, new THREE.SphereGeometry(0.24, 8, 6), c, x + Math.cos(a) * r, 0.2 + hh, z + Math.sin(a) * r)
-      }
-      mk(s, new THREE.SphereGeometry(0.7, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0xf3d9c4, x + 1.4, 0.18, z - 1.3)
-    },
     scoreboard(s, x, z) {
       bx(s, 4.6, 0.12, 4.6, 0xb97a45, x, 0.1, z)
       for (const sg of [-1, 1]) cyl(s, 0.09, 2.6, 0x4b5563, x + sg * 1.4, 0.2, z, 6)
@@ -389,8 +239,6 @@ export function makeMaps(h) {
     japan: { shaft: 'round', pole: 0xc0392b, head: 0xf5f0e6, lamp: 'ball', base: 0x2b2b2b, cap: 0x2b2b2b, roof: 0x2b2b2b },
     ice: { shaft: 'log', pole: 0x7a5a3a, head: 0xbfe3f5, lamp: 'ball', base: 0xffffff, cap: 0xffffff },
     wire: { shaft: 'round', pole: 0x0a66c2, head: 0xc2187a, lamp: 'ball', base: 0x0a8f3c },
-    war: { shaft: 'round', pole: 0x4b5320, head: 0x2b2b22, lamp: 'box', base: 0x8a7a55, cap: 0x4b5320, rim: 0x3f4a2a },
-    ocean: { shaft: 'round', pole: 0xff7f6e, head: 0xfff1e6, lamp: 'ball', base: 0xff9f8f, cap: 0x9fe0f5 },
     court: { shaft: 'round', pole: 0xe8742a, head: 0xffffff, lamp: 'ball', base: 0x1d3f8a, cap: 0xe8742a, rim: 0x1d3f8a },
   }
 
@@ -435,20 +283,6 @@ export function makeMaps(h) {
       c: { base: 0x9fb4c8, base2: 0x0a66c2, grass: 0xb9c7d6, pad: 0x8aa2bb, road: 0x0a66c2, dash: 0x0a8f3c, cross: 0x0a8f3c, lampPole: 0x0a66c2, lampGlow: 0x111111, water: 0x0a66c2, round: 0x0a8f3c, pine: 0x0a8f3c, blossom: 0x0b7a5a, trunk: 0x0a66c2, park: 0x0a8f3c, court: 0xc2187a, courtLine: 0x111111, plaza: 0xb8860b, stone: 0x4a6a8a, grove: 0x0a8f3c, bench: 0xb8860b, crate: [0xc2187a, 0x0a66c2, 0xb8860b], empty: 0x6a7f95 },
       wire: true, glowLamps: true,
       people: { coats: [0xc2187a, 0x0a66c2, 0x0a8f3c, 0xb8860b, 0x111111, 0xd9480f], pants: [0x0a66c2, 0x0a8f3c, 0x111111], hat: null, shorts: false, skin: 0x111111 },
-    }),
-    war: T('war', {
-      c: { base: 0x6b5a3e, base2: 0x54462f, grass: 0x7d8a4e, pad: 0xa39a72, road: 0x9a8562, lampPole: 0x3a3a3a, lampGlow: 0xffe9a8, water: 0x5fa3b8, round: 0x55703a, pine: 0x3f5a2e, blossom: 0x6b8a45, trunk: 0x5a4a32, park: 0x6f7d45, court: 0x8a8f7a, courtLine: 0xf1f1e4, plaza: 0x8a9558, stone: 0x8a8f7a, grove: 0x6f7d45, bench: 0xb5a67a, crate: [0x5d6b3a, 0xb5a67a, 0x8a8f7a], empty: 0x8a8562 },
-      sun: [0xfff2d6, 2.3], hemi: [0xf4f4e4, 0x6b6a4a, 1.4],
-      people: { coats: [0x5d6b3a, 0x7a6a4a, 0x3f4a2a, 0x8a8f7a, 0x4a5630, 0xb5a67a], pants: [0x3f4a2a, 0x4a403a, 0x5a5a4a], hat: 0x3f4a2a, hats: [0x3f4a2a, 0x2b2b2b, 0x5d6b3a, 0x6b6b5a, 0x3f4a2a, 0x8a7a55], shorts: false },
-      dashes: false, zone: true, landmarks: { 1: land.base, 2: land.airdrop },
-    }),
-    ocean: T('ocean', {
-      c: { base: 0x8a7a52, base2: 0x6e6040, grass: 0xd9c58f, pad: 0xe6d6a8, road: 0xbfa873, lampPole: 0x4a6b7a, lampGlow: 0x7ff6ff, water: 0x2fb3c9, round: 0xff7f6e, pine: 0x3fbf7f, blossom: 0xc77dff, trunk: 0xff9e80, park: 0xcbb682, court: 0xcbb682, courtLine: 0xe6d6a8, plaza: 0xcbb682, stone: 0x9aa5b1, grove: 0xcbb682, bench: 0x8b5a2b, crate: [0xff7f6e, 0xffd166, 0x4dd0e1], empty: 0xbfa873 },
-      sun: [0xbfe9ff, 1.9], hemi: [0x9fe3ff, 0x1f5c7a, 1.7], fog: [0x9fe0f5, 40, 115], glowLamps: true,
-      // under the sea nobody walks: the pavements are for fish and divers
-      people: { kind: 'sea', fish: [0xff8c42, 0x4dd0e1, 0xf72585, 0xffd166, 0x80ed99, 0xc77dff], coats: [0xff6b00, 0xf4d35e, 0x111111, 0xff2d55, 0x00b4d8, 0x2b2d42], pants: [0x111111, 0x1d3557, 0x2b2d42], hat: null, shorts: false },
-      particle: { color: 0xffffff, size: 0.22, fall: -1.6, sway: 0.5 },
-      tree: 'coral', dashes: false, landmarks: { 0: land.reef, 1: land.wreck, 2: land.reef },
     }),
     court: T('court', {
       c: { base: 0x8a5a2b, base2: 0x6e4623, grass: 0xd9a066, pad: 0xe7b97f, road: 0x1d3f8a, dash: 0xffffff, cross: 0xffffff, lampPole: 0x4b5563, lampGlow: 0xffffff, park: 0x1d3f8a, court: 0xc0392b, plaza: 0x2a9d8f, grove: 0xb97a45, round: 0xe8742a, pine: 0xff6b00, blossom: 0xe8742a, trunk: 0x4b5563, bench: 0x4b5563, crate: [0xe8742a, 0xc0392b, 0x1d3f8a], empty: 0xc98f55 },

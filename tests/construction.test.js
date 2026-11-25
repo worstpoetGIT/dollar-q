@@ -79,8 +79,8 @@ describe('construction: the bricks', () => {
 
   it('a round wall is rings of bricks all the way round', () => {
     const w = { d: drum(0, 0.35, 0, 1.5, 0.7), from: 0, to: 0.7, grown: null }
-    const b = wallBricks(w, KITS.ocean)
-    for (const x of b) expect(Math.hypot(x.x, x.z)).toBeGreaterThan(1.5 - KITS.ocean.bt - 0.03)
+    const b = wallBricks(w, KITS.ice)
+    for (const x of b) expect(Math.hypot(x.x, x.z)).toBeGreaterThan(1.5 - KITS.ice.bt - 0.03)
     expect(new Set(b.map((x) => x.side))).toEqual(new Set([0, 1, 2, 3]))
     const ring = b.filter((x) => x.course === 0).length
     expect(ring).toBeGreaterThan(20)

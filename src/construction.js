@@ -208,7 +208,5 @@ export const KITS = {
   japan: { bl: 0.5, ch: 0.1, bt: 0.14, shape: 'plank' },
   ice: { bl: 0.3, ch: 0.22, bt: 0.2, shape: 'cube' },
   wire: { bl: 0.3, ch: 0.2, bt: 0.2, shape: 'cube' },
-  war: { bl: 0.4, ch: 0.15, bt: 0.22, shape: 'sandbag' },
-  ocean: { bl: 0.3, ch: 0.2, bt: 0.2, shape: 'shell' },
   court: { bl: 0.24, ch: 0.24, bt: 0.24, shape: 'ball' },
 }
