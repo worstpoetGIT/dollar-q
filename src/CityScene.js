@@ -583,7 +583,7 @@ export class CityScene {
       const head = new THREE.Group()
       bx(head, 0.1, 0.06, 0.06, S.pole || S.head, 0.1, 1.95, 0) // arm out to the head
       bx(head, 0.22, 0.8, 0.3, S.head, 0.3, 1.6, 0)
-      if (S.rim) bx(head, 0.02, 0.86, 0.36, S.rim, 0.19, 1.57, 0)
+      if (S.rim) bx(head, 0.02, 1.26, 0.36, S.rim, 0.19, 1.17, 0) // (the back frame covers the lamps and the arrows)
       if (S.roof) bx(head, 0.3, 0.05, 0.38, S.roof, 0.3, 2.4, 0)
       const mats = LIT.map((c, i) => {
         const m = new THREE.MeshBasicMaterial({ color: c })
@@ -593,11 +593,17 @@ export class CityScene {
         else mk(head, new THREE.SphereGeometry(0.085, 8, 6), m, 0.43, y, 0, false)
         return m
       })
-      // the two arrows under the lamps: left and right as the driver sees them (the head looks along +x, the driver looks back along -x, so his left is +z)
-      bx(head, 0.22, 0.4, 0.38, S.head, 0.3, 1.18, 0)
+      // the two arrows under the lamps, as the driver sees them (the head looks along +x, the driver looks back along -x, so his left is +z).
+      // same box as the lamps above it, a flat dark plate for each arrow, and the arrow lies flat on the plate: nothing sticks out
+      bx(head, 0.22, 0.4, 0.3, S.head, 0.3, 1.18, 0)
       const arrow = (side) => {
-        const m = new THREE.MeshBasicMaterial({ color: ARROW_OFF })
-        mk(head, new THREE.ConeGeometry(0.08, 0.2, 3), m, 0.43, 1.38, side * 0.095, false).rotation.x = side * (Math.PI / 2)
+        bx(head, 0.008, 0.15, 0.13, 0x15171b, 0.414, 1.325, side * 0.075)
+        const m = new THREE.MeshBasicMaterial({ color: ARROW_OFF, side: THREE.DoubleSide })
+        const geo = new THREE.ExtrudeGeometry(ARROW_SHAPE, { depth: 0.012, bevelEnabled: false })
+        geo.rotateY(side > 0 ? -Math.PI / 2 : Math.PI / 2) // the tip points to his left (+z) or his right (-z), the flat side lies on the plate
+        const a = new THREE.Mesh(geo, m)
+        a.position.set(side > 0 ? 0.418 + 0.012 : 0.418, 1.4, side * 0.075)
+        head.add(a)
         return m
       }
       const left = arrow(1), right = arrow(-1)
@@ -1906,4 +1912,12 @@ const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 // traffic light colours: red, yellow, green, lit and switched off
 const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]
 const OFF = [0x3a0d0d, 0x3a2e00, 0x0d3a1a]
-const ARROW_OFF = 0x1b2a20
+const ARROW_OFF = 0x2e4034
+// an arrow lying flat (pointing along +x): a shaft and a triangle head, small enough to sit inside its plate
+const ARROW_SHAPE = (() => {
+  const L = 0.105, hl = 0.05, hw = 0.045, sw = 0.016
+  const sh = new THREE.Shape()
+  sh.moveTo(-L / 2, -sw); sh.lineTo(L / 2 - hl, -sw); sh.lineTo(L / 2 - hl, -hw); sh.lineTo(L / 2, 0)
+  sh.lineTo(L / 2 - hl, hw); sh.lineTo(L / 2 - hl, sw); sh.lineTo(-L / 2, sw); sh.closePath()
+  return sh
+})()
