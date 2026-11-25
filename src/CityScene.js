@@ -568,10 +568,19 @@ export class CityScene {
         placed.road = nearX ? { axis: 'x', along: pos.x, side: Math.sign(pos.z) } : nearZ ? { axis: 'z', along: pos.z, side: Math.sign(pos.x) } : null
         placed.taken = 0
         if (placed.road) {
-          const along = placed.road.axis === 'x'
-          const strip = mk(s, new THREE.BoxGeometry(along ? 4.9 : 1, 0.08, along ? 1 : 4.9), shade(C.pad, -0.22), 0, 0.075, 0, false)
-          strip.visible = false
-          placed.strip = strip
+          // the part of the road the county takes: a sandy strip with a yellow edge and orange cones. in its own little group,
+          // whose local +z points from the edge of the road towards the middle of it
+          const zone = new THREE.Group()
+          const base = mk(zone, new THREE.BoxGeometry(4.9, 0.08, 1), 0xc9a66b, 0, 0, 0, false)
+          const edge = bx(zone, 4.9, 0.1, 0.07, 0xffc400, 0, 0.01, 0)
+          const cones = [-1.9, -0.95, 0, 0.95, 1.9].map((x) => mk(zone, new THREE.ConeGeometry(0.07, 0.22, 7), 0xff6a00, x, 0.12, 0, false))
+          const { axis, side } = placed.road
+          zone.position.set(axis === 'x' ? placed.road.along : side * 1.5, 0.075, axis === 'x' ? side * 1.5 : placed.road.along)
+          zone.rotation.y = axis === 'x' ? (side > 0 ? Math.PI : 0) : -side * Math.PI / 2
+          zone.visible = false
+          s.add(zone)
+          placed.strip = zone
+          zone.userData = { base, edge, cones }
         }
         i++
       }
@@ -814,10 +823,11 @@ export class CityScene {
       const n = lot.taken
       lot.strip.visible = n > 0.01
       if (!lot.strip.visible) continue
-      const { axis, along, side } = lot.road
-      const mid = side * (1.5 - n / 2) // from the edge of the road inwards
-      if (axis === 'x') { lot.strip.position.set(along, 0.075, mid); lot.strip.scale.set(1, 1, n) }
-      else { lot.strip.position.set(mid, 0.075, along); lot.strip.scale.set(n, 1, 1) }
+      const u = lot.strip.userData // measured from the edge of the road inwards
+      u.base.scale.z = n
+      u.base.position.z = n / 2
+      u.edge.position.z = n
+      for (const c of u.cones) c.position.z = n
     }
   }
 

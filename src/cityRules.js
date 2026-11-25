@@ -29,7 +29,7 @@ export const treesLeft = (level) => Math.max(0, TREES_PER_LOT - felled(level))
 // ---------- roads ----------
 
 // how much of the 3 wide road a county takes on its own side. the more floors, the narrower the road in front of it.
-export const ROAD_TAKEN_MAX = 0.45
+export const ROAD_TAKEN_MAX = 0.4
 export const roadTaken = (level) => ROAD_TAKEN_MAX * (1 - Math.exp(-Math.max(0, Number.isFinite(level) ? level : 0) / 12))
 
 // ---------- accidents ----------
