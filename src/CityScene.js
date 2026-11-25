@@ -1035,9 +1035,10 @@ export class CityScene {
   // rollers, the crane lifts the roof, domes and slabs into place. then the scaffold comes down and the finished model takes over.
 
   // what a model is made of, in the frame of its group
-  describe(g) {
+  describe(g, frame) { // (everything described in the frame of 'frame', so the parts of a lot, each with its own size, can be built together)
     g.updateMatrixWorld(true)
-    const inv = new THREE.Matrix4().copy(g.matrixWorld).invert()
+    frame.updateMatrixWorld(true)
+    const inv = new THREE.Matrix4().copy(frame.matrixWorld).invert()
     const out = []
     g.traverse((m) => {
       if (!m.isMesh) return
@@ -1053,14 +1054,14 @@ export class CityScene {
       if (m.geometry.type === 'BoxGeometry') {
         const turned = Math.abs(Math.sin(e.y)) > 0.7
         const w = (turned ? par.depth * s.z : par.width * s.x), d = (turned ? par.width * s.x : par.depth * s.z), h = par.height * s.y
-        out.push({ mesh: m, kind: 'box', cx: p.x, cy: p.y, cz: p.z, w, d, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat && quarter, win: m.userData.win })
+        out.push({ root: g, mesh: m, kind: 'box', cx: p.x, cy: p.y, cz: p.z, w, d, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat && quarter, win: m.userData.win })
       } else if (m.geometry.type === 'CylinderGeometry') {
         const h = par.height * s.y
-        out.push({ mesh: m, kind: 'cyl', cx: p.x, cy: p.y, cz: p.z, rt: par.radiusTop * s.x, rb: par.radiusBottom * s.x, seg: par.radialSegments, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat })
+        out.push({ root: g, mesh: m, kind: 'cyl', cx: p.x, cy: p.y, cz: p.z, rt: par.radiusTop * s.x, rb: par.radiusBottom * s.x, seg: par.radialSegments, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat })
       } else {
         const b = new THREE.Box3().setFromObject(m).applyMatrix4(inv)
         const c = b.getCenter(new THREE.Vector3()), z = b.getSize(new THREE.Vector3())
-        out.push({ mesh: m, kind: 'other', cx: c.x, cy: c.y, cz: c.z, w: z.x, d: z.z, h: z.y, bottom: b.min.y, top: b.max.y, color, upright: false })
+        out.push({ root: g, mesh: m, kind: 'other', cx: c.x, cy: c.y, cz: c.z, w: z.x, d: z.z, h: z.y, bottom: b.min.y, top: b.max.y, color, upright: false })
       }
     })
     return out
@@ -1085,39 +1086,31 @@ export class CityScene {
     return { p, role, size: this.T.id === 'lego' ? 0.78 : 1.05, last: null }
   }
 
+  // everything that changed in the lot (every floor, every building, however many) is built together, in one go
   queueBuild(lot, jobs) {
-    lot.queue.push(...jobs)
     this.setCrane(lot, true)
-    if (!lot.build) this.nextBuild(lot)
+    this.startBuild(lot, jobs, BUILD_SECONDS)
   }
 
-  nextBuild(lot) {
-    const job = lot.queue.shift()
-    if (!job) { if (lot.target <= (lot.built ? lot.built.L : 0)) this.setCrane(lot, false); return }
-    const pending = Math.max(0, lot.target - lot.built.L) + lot.queue.length * 0.6
-    this.startBuild(lot, job, BUILD_SECONDS / (1 + 0.3 * pending)) // every build takes 7 seconds; with floors waiting behind it, a bit less
-  }
-
-  startBuild(lot, job, seconds) {
-    const { g, old } = job
+  startBuild(lot, jobs, seconds) {
     const id = this.T.id
-    const plan = compare(old ? this.describe(old.g) : [], this.describe(g))
+    const site = new THREE.Group() // bricks and scaffold live here: a frame the size of a typical building model, at the middle of the lot
+    site.scale.setScalar(FRAME)
+    lot.holder.add(site)
+    site.updateMatrixWorld(true)
+    const plan = compare(jobs.flatMap((j) => (j.old ? this.describe(j.old.g, site) : [])), jobs.flatMap((j) => this.describe(j.g, site)))
     const tl = timelineWithin(plan, KITS[id] || KITS.city, Math.max(3.5, seconds))
     const kitColors = (BRICK_KITS[id] || BRICK_KITS.city).colors
 
-    const site = new THREE.Group() // bricks and scaffold live here, in the same frame as the model
-    site.position.copy(g.position)
-    site.scale.copy(g.scale)
-    lot.holder.add(site)
-    site.updateMatrixWorld(true)
-
-    const B = { job, g, old, plan, tl, site, t: 0, landed: 0, ptr: [0, 0, 0, 0], sides: [[], [], [], []], pieces: [], removes: [], scaf: null, platforms: new Map(), layers: [], painters: [] }
+    const B = { jobs, plan, tl, site, t: 0, landed: 0, ptr: [0, 0, 0, 0], sides: [[], [], [], []], pieces: [], removes: [], scaf: null, platforms: new Map(), layers: [], painters: [] }
     lot.build = B
 
     // nothing of the new model shows until it is built: only the finished walls, behind a cut that rises with the work
     const wallMeshes = new Set(plan.walls.map((w) => w.d.mesh))
-    g.visible = true
-    g.traverse((n) => { if (n.isMesh && !wallMeshes.has(n)) n.visible = false })
+    for (const j of jobs) {
+      j.g.visible = true
+      j.g.traverse((n) => { if (n.isMesh && !wallMeshes.has(n)) n.visible = false })
+    }
     const top = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1e4) // keeps what is above the painters' edge (nothing at first)
     B.clipLow = top
     B.clipped = []
@@ -1202,20 +1195,25 @@ export class CityScene {
 
     // everything that is put in place by something other than a bricklayer: the fence, pit and footing, the frame, and the pieces of the model
     B.items = []
-    const addItem = (mesh, spec, h, top, by) => B.items.push({ mesh, mode: spec.mode, start: spec.start, dur: spec.dur, by, h, top, pos: mesh.position.clone(), scale: mesh.scale.clone(), done: false })
+    const addItem = (mesh, spec, top, by) => {
+      mesh.updateMatrixWorld(true)
+      const box = new THREE.Box3().setFromObject(mesh)
+      const gp = mesh.geometry && mesh.geometry.parameters
+      B.items.push({ mesh, parent: mesh.parent, mode: spec.mode, start: spec.start, dur: spec.dur, by, top, pos: mesh.position.clone(), scale: mesh.scale.clone(), halfH: gp && gp.height ? (gp.height * mesh.scale.y) / 2 : (box.max.y - box.min.y) / 2, worldHalfH: (box.max.y - box.min.y) / 2, done: false })
+    }
     const prop = (spec) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(spec.w, spec.h, spec.d), L(spec.color))
       m.position.set(spec.x, spec.y, spec.z)
       m.castShadow = m.receiveShadow = true
       m.visible = false
       site.add(m)
-      addItem(m, spec, spec.h, spec.y + spec.h / 2)
+      addItem(m, spec, spec.y + spec.h / 2)
     }
     if (tl.site) { tl.site.fence.forEach(prop); prop(tl.site.pit); prop(tl.site.footing) }
     tl.frame.forEach(prop)
     for (const p of tl.pieces) {
-      g.attach(p.d.mesh)
-      addItem(p.d.mesh, p, p.d.h, p.d.top, p.by)
+      p.d.root.attach(p.d.mesh)
+      addItem(p.d.mesh, p, p.d.top, p.by)
     }
     for (const r of tl.removes) B.removes.push({ ...r, mesh: r.d.mesh, y0: r.d.mesh.position.y, done: false })
     // the window panes, all in one drawing
@@ -1269,7 +1267,7 @@ export class CityScene {
   updateBuild(lot, dt) {
     const B = lot.build
     B.t += dt
-    const { t, tl, site, g } = B
+    const { t, tl, site } = B
     const kIn = Math.min(1, t / 0.45), kOut = Math.max(0.001, Math.min(1, (tl.end - t) / 0.8))
     const crewK = Math.max(0.001, kIn * kOut)
     site.updateMatrixWorld(true)
@@ -1381,23 +1379,24 @@ export class CityScene {
       const m = p.mesh
       m.visible = true
       if (p.mode === 'pour') { // grows up from the ground
-        const s = Math.max(0.02, f)
-        m.scale.set(p.scale.x, p.scale.y * s, p.scale.z)
-        m.position.y = p.pos.y - (p.h / 2) * (1 - s)
+        const sc = Math.max(0.02, f)
+        m.scale.set(p.scale.x, p.scale.y * sc, p.scale.z)
+        m.position.y = p.pos.y - p.halfH * (1 - sc)
       } else if (p.mode === 'hand') {
         const e = f * f * (3 - 2 * f)
         m.scale.set(p.scale.x * (0.3 + 0.7 * e), p.scale.y * (0.3 + 0.7 * e), p.scale.z * (0.3 + 0.7 * e))
       } else if (lot.crane) {
-        const aim = site.localToWorld(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z))
-        const yard = new THREE.Vector3(lot.crane.position.x - 0.9, 0.1 + p.h * 0.5, lot.crane.position.z + 0.9)
+        p.parent.updateMatrixWorld(false)
+        const aim = p.parent.localToWorld(p.pos.clone()) // (where it ends up, in the world: the lot may still be growing)
+        const yard = new THREE.Vector3(lot.crane.position.x - 0.9, 0.1 + p.worldHalfH, lot.crane.position.z + 0.9)
         const hoist = Math.max(aim.y + 0.7, B.toWorldY(Math.max(tl.topAll, p.top)) + 0.9)
         let x, y, z
         if (f < 0.12) { x = yard.x; z = yard.z; y = yard.y } // waiting for the hook
         else if (f < 0.45) { const e = (f - 0.12) / 0.33; x = yard.x; z = yard.z; y = yard.y + (hoist - yard.y) * (e * e * (3 - 2 * e)) } // up
         else if (f < 0.75) { const e = (f - 0.45) / 0.3, sm = e * e * (3 - 2 * e); x = yard.x + (aim.x - yard.x) * sm; z = yard.z + (aim.z - yard.z) * sm; y = hoist } // across
         else { const e = (f - 0.75) / 0.25, sm = e * e * (3 - 2 * e); x = aim.x; z = aim.z; y = hoist + (aim.y - hoist) * sm } // down
-        m.position.copy(g.worldToLocal(new THREE.Vector3(x, y, z)))
-        load = { x, y, z, top: y + (p.h / 2) * g.scale.y }
+        m.position.copy(p.parent.worldToLocal(new THREE.Vector3(x, y, z)))
+        load = { x, y, z, top: y + p.worldHalfH }
       }
       if (f >= 1) { p.done = true; m.position.copy(p.pos); m.scale.copy(p.scale) }
     }
@@ -1444,31 +1443,21 @@ export class CityScene {
   finishBuild(lot, all = false) {
     const B = lot.build
     if (B) {
-      const { g, old, site, plan } = B
-      g.traverse((n) => { if (n.isMesh) n.visible = true })
+      for (const j of B.jobs) j.g.traverse((n) => { if (n.isMesh) n.visible = true })
       for (const mm of B.clipped) { mm.clippingPlanes = null; delete mm.userData.outlineParameters; mm.needsUpdate = true }
       for (const p of B.items) { p.mesh.position.copy(p.pos); p.mesh.scale.copy(p.scale) }
-      if (old) this.disposePart(old.g)
+      for (const j of B.jobs) if (j.old) this.disposePart(j.old.g)
       if (B.inst) B.inst.dispose()
       if (B.studs) B.studs.dispose()
       if (B.panes) B.panes.dispose()
-      this.disposePart(site)
+      this.disposePart(B.site)
       this.disposePart(B.rope)
       for (const c of B.crew) this.disposePart(c.p)
       lot.build = null
-      void plan
     }
-    if (all) { // the rest of the queue goes in without a crew
-      while (lot.queue.length) {
-        const j = lot.queue.shift()
-        j.g.traverse((n) => { if (n.isMesh) n.visible = true })
-        j.g.visible = true
-        if (j.old) this.disposePart(j.old.g)
-      }
-      return
-    }
-    this.nextBuild(lot)
+    if (!all && lot.target <= (lot.built ? lot.built.L : 0)) this.setCrane(lot, false) // (if more spending came in meanwhile, the next build starts on its own)
   }
+
 
   // somebody to work or fight
   folk() {
@@ -1963,7 +1952,7 @@ export class CityScene {
         const now = performance.now()
         if (now >= lot.stepAt) {
           lot.stepAt = now + lot.stepEvery * 1000
-          this.rebuildLot(lot, lot.county, lot.built.L + 1, true)
+          this.rebuildLot(lot, lot.county, lot.target, true) // straight to where the spending says: every floor and building it needs, built together
           if (lot.target <= lot.built.L && !lot.build) this.setCrane(lot, false)
           else if (lot.crane) lot.crane.userData.h = Math.max(lot.crane.userData.h, lot.top + 2.2)
         }
@@ -2081,6 +2070,7 @@ const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 // traffic light colours: red, yellow, green, lit and switched off
 const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]
 const OFF = [0x3a0d0d, 0x3a2e00, 0x0d3a1a]
+const FRAME = 0.62 // the size of the frame a build is planned in (the size of a typical building model in its lot)
 const ARROW_OFF = 0x2e4034
 // an arrow lying flat (pointing along +x): a shaft and a triangle head, small enough to sit inside its plate
 const ARROW_SHAPE = (() => {

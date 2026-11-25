@@ -286,3 +286,37 @@ describe('construction: the whole build takes seven seconds', () => {
     }
   }
 })
+
+describe('construction: a big jump in spending is built in one go', () => {
+  // a county that went from a small kiosk to three buildings and a tower of ten floors in one expense
+  const before = [box(0, 0.3, 0, 1.4, 0.6, 1.4, 3)]
+  const after = [
+    ...tower(10), box(3.4, 1.0, 1.0, 2.2, 2.0, 2.0, 11), box(3.4, 2.1, 1.0, 2.4, 0.2, 2.2, 12), box(-3.4, 0.9, 1.3, 2.0, 1.8, 1.8, 13), box(-3.4, 1.9, 1.3, 2.2, 0.2, 2.0, 14),
+    box(0, 0.05, 3.2, 2.0, 0.1, 0.5, 15),
+  ]
+  const plan = compare(before, after)
+
+  it('every floor and every building is part of the same plan', () => {
+    expect(plan.walls.length).toBe(3) // the tower and the two other buildings
+    expect(plan.pieces.length).toBeGreaterThan(3)
+    expect(plan.removed.length).toBe(1) // the old kiosk comes down
+  })
+
+  for (const [map, kit] of Object.entries(KITS)) {
+    it(`on the ${map} map it still takes the same seven seconds (not floor after floor), in order`, () => {
+      const tl = timelineWithin(plan, kit)
+      expect(tl.end).toBeGreaterThan(BUILD_SECONDS - 0.4)
+      expect(tl.end).toBeLessThan(BUILD_SECONDS + 0.4)
+      expect(tl.bricks.length).toBeLessThanOrEqual(MAX_BRICKS)
+      expect(tl.site).not.toBeNull()
+      expect(tl.frame.filter((p) => p.type === 'deck').length).toBeGreaterThan(6)
+      // all the buildings go up at the same time: the first brick of every wall is laid before the last brick of the tallest one
+      const first = (w) => Math.min(...tl.bricks.filter((b) => b.wall === w).map((b) => b.start))
+      const last = Math.max(...tl.bricks.map((b) => b.land))
+      for (let w = 0; w < plan.walls.length; w++) expect(first(w)).toBeLessThan(last - 1)
+      const crane = [...tl.frame.filter((p) => p.mode === 'crane'), ...tl.pieces.filter((p) => p.mode === 'crane')].sort((a, b) => a.start - b.start)
+      for (let i = 1; i < crane.length; i++) expect(crane[i].start).toBeGreaterThanOrEqual(crane[i - 1].start + crane[i - 1].dur - 1e-9)
+      expect(tl.paintStart).toBeGreaterThanOrEqual(tl.lastBrick - 1e-9)
+    })
+  }
+})
