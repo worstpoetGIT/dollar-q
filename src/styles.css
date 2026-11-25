@@ -215,41 +215,20 @@ select.field { appearance: none; -webkit-appearance: none; }
 .map-thumb .b2 { left: 68%; height: 26%; }
 .map-name { display: block; font-weight: 700; font-size: 15.6px; margin-top: 7px; }
 
-/* ---------- iOS 26 liquid glass ----------
-   a clear tint, heavy blur and saturation, and a bright rim that catches the light along the top left edge and fades out towards the bottom right,
-   with a soft shadow under it. the bars (counties, breakdown, tabs) are the clearest; the rest of the elements are a little more filled. */
-:root {
-  --lg-a: rgba(255, 255, 255, 0.30); --lg-b: rgba(255, 255, 255, 0.10);
-  --lg-clear-a: rgba(255, 255, 255, 0.20); --lg-clear-b: rgba(255, 255, 255, 0.05);
-  --lg-rim-a: rgba(255, 255, 255, 1); --lg-rim-b: rgba(40, 40, 80, 0.26); --lg-glow: rgba(255, 255, 255, 0.75); --lg-shade: rgba(30, 30, 70, 0.16); --lg-bright: 1.05;
+/* liquid glass: clear tint, heavy blur, bright top edge. Over black it reads black, over white it reads white. */
+.tabbar, .filters, .dock .card, .recenter, .map-btn, .cur-chip, .bubble {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(26px) saturate(1.9); backdrop-filter: blur(26px) saturate(1.9);
+  box-shadow: var(--shadow), inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--line);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) { --lg-a: rgba(255, 255, 255, 0.13); --lg-b: rgba(255, 255, 255, 0.04); --lg-clear-a: rgba(255, 255, 255, 0.10); --lg-clear-b: rgba(255, 255, 255, 0.02); --lg-rim-a: rgba(255, 255, 255, 0.78); --lg-rim-b: rgba(255, 255, 255, 0.14); --lg-glow: rgba(255, 255, 255, 0.38); --lg-shade: rgba(0, 0, 0, 0.55); --lg-bright: 0.74; }
-}
-:root[data-theme='dark'] { --lg-a: rgba(255, 255, 255, 0.13); --lg-b: rgba(255, 255, 255, 0.04); --lg-clear-a: rgba(255, 255, 255, 0.10); --lg-clear-b: rgba(255, 255, 255, 0.02); --lg-rim-a: rgba(255, 255, 255, 0.78); --lg-rim-b: rgba(255, 255, 255, 0.14); --lg-glow: rgba(255, 255, 255, 0.38); --lg-shade: rgba(0, 0, 0, 0.55); --lg-bright: 0.74; } /* (dark: what is behind the glass is dimmed a little, so the text on it stays readable over a bright building) */
 
-.card, .pill, .seg, .stepper, .field, .icon-btn, .x-btn, .key, .map-sheet, .recenter, .map-btn, .cur-chip, .bubble, .tabbar, .filters, .dock .card {
-  background: linear-gradient(150deg, var(--lg-a), var(--lg-b));
-  -webkit-backdrop-filter: blur(22px) saturate(1.9) brightness(var(--lg-bright)); backdrop-filter: blur(22px) saturate(1.9) brightness(var(--lg-bright));
-  box-shadow: inset 0 1px 1px var(--lg-glow), inset 0 -1px 1px rgba(255, 255, 255, 0.10), inset 0 0 26px rgba(255, 255, 255, 0.05), 0 10px 32px var(--lg-shade);
-  border: 0;
-}
-/* the bars that sit over the 3D city: the most see-through */
-.tabbar, .filters, .dock .card { background: linear-gradient(150deg, var(--lg-clear-a), var(--lg-clear-b)); -webkit-backdrop-filter: blur(26px) saturate(2) brightness(var(--lg-bright)); backdrop-filter: blur(26px) saturate(2) brightness(var(--lg-bright)); }
-
-/* the rim: a thin bright line on the top left that fades away, and a faint one on the bottom right */
-.card, .pill, .seg, .stepper, .icon-btn, .x-btn, .key, .filters, .dock .card { position: relative; }
-.card::before, .pill::before, .seg::before, .stepper::before, .icon-btn::before, .x-btn::before, .key::before, .map-sheet::before, .recenter::before, .map-btn::before, .cur-chip::before, .bubble::before, .tabbar::before, .filters::before, .dock .card::before {
-  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.3px; pointer-events: none;
-  background: linear-gradient(150deg, var(--lg-rim-a) 0%, rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0) 62%, var(--lg-rim-b) 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-}
-.map-sheet, .recenter, .map-btn, .bubble, .cur-chip { position: absolute; }
-.cur-chip { position: relative; }
+/* everything black, no outlines */
+.key, .pill, .icon-btn, .field, .stepper, .seg, .x-btn, .card, .tabbar, .filters, .dock .card, .recenter, .map-btn, .cur-chip, .bubble, .map-sheet, .sheet { box-shadow: none; }
 .key:active, .pill:active, .btn.ghost:active, .icon-btn:active { background: var(--press); }
 .bar-bg { background: var(--track); }
 .map-thumb { box-shadow: none; }
-.pill.on, .seg button.on { box-shadow: none; }
+/* tab bar: solid page colour, no glass. The iOS blur left a faint edge line along the bottom of the bar. */
+.tabbar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; border: 0; }
 
 /* a solid strip behind the phone's status bar, so scrolled content never slides under the clock and battery */
 .status-cover { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 40; pointer-events: none; }
