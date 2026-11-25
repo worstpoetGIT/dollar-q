@@ -67,7 +67,7 @@ export function NameStep({ initial = '', onBack, onDone }) {
 }
 
 const STEPS = [
-  { h: 'Name your counties.', p: "Counties are your spending categories. Each one becomes a building on the map. Rename them, regroup them, or add up to 24.", C: CountiesEditor, next: 'Continue', tone: 'counties' },
+  { h: 'Name your counties.', p: "Counties are your spending categories. Each one becomes a building on the map. Rename them, regroup them, or add up to 12.", C: CountiesEditor, next: 'Continue', tone: 'counties' },
   { h: 'Pick your payment cultures.', p: 'How do you pay? Add up to 5 of each kind. They show up when you log an expense.', C: MethodsEditor, next: 'Continue', tone: 'payments' },
   { h: 'Accounts and currencies.', p: 'Up to 5 accounts, each with one currency. Spend in EUR and INR? Make two.', C: AccountsEditor, next: 'Continue', tone: 'accounts' },
   { h: 'Fixed expenses.', p: "Subscriptions and rent that debit on a fixed day. Add them once and they're logged automatically. You can skip this.", C: FixedEditor, next: 'Enter my state', tone: 'fixed' },

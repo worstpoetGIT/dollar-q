@@ -12,7 +12,7 @@ const KEY = 'dollar-q:v1'
 export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other', 'Gulliver']
 export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot']
 export const PALETTE = ['#e5383b', '#3a86ff', '#8338ec', '#b08968', '#2d936c', '#ff7f50', '#8d6e63', '#118ab2', '#f4a259', '#d62f8b', '#4361ee', '#e056a0']
-export const MAX_COUNTIES = 24
+export const MAX_COUNTIES = 12 // the map has 12 lots. (the city can grow a second ring for up to 24, see BIG_CITY in CityScene.js, but that is switched off)
 export const MAX_ACCOUNTS = 5
 export const MAX_SUB = 5
 
@@ -27,7 +27,7 @@ export const DEFAULT_COUNTIES = [
   county('Restaurants', 'Food', 'cafe', 5, 'fork'),
   county('Cafes', 'Food', 'cafe', 6, 'coffee'),
   county('Transit', 'Other', 'depot', 7, 'bus'),
-  county('Miscellaneous', 'Other', 'market', 8, 'dots'),
+  county('Banking', 'Gulliver', 'tower', 8, 'bank'),
   county('Entertainment', 'Media', 'cinema', 9, 'film'),
   county('Electronics', 'Shopping', 'tech', 10, 'chip'),
   county('Gifts', 'Gulliver', 'shop', 11, 'tag'),

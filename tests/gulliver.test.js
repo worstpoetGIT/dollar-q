@@ -19,9 +19,9 @@ describe('Gulliver: the big rare things', () => {
     expect(isGulliver(undefined)).toBe(false)
   })
 
-  it('new users get Home & Rent, Investments and Gifts under Gulliver, and still no more than 12 counties', () => {
+  it('new users get Home & Rent, Investments, Banking and Gifts under Gulliver, and still no more than 12 counties', () => {
     const g = DEFAULT_COUNTIES.filter(isGulliver).map((c) => c.name)
-    expect(g).toEqual(['Home & Rent', 'Investments', 'Gifts'])
+    expect(g).toEqual(['Home & Rent', 'Investments', 'Banking', 'Gifts'])
     expect(DEFAULT_COUNTIES.length).toBeLessThanOrEqual(MAX_COUNTIES)
     expect(new Set(DEFAULT_COUNTIES.map((c) => c.id)).size).toBe(DEFAULT_COUNTIES.length)
   })
@@ -69,17 +69,17 @@ describe('this month, without Gulliver', () => {
   })
 })
 
-describe('up to 24 counties', () => {
+describe('up to 12 counties', () => {
   const county = (i) => ({ id: 'c' + i, name: 'County ' + i, group: 'Food', style: 'shop', icon: 'tag', color: '#e5383b' })
 
-  it('allows 24 and no more (the map has 24 lots)', () => {
-    expect(MAX_COUNTIES).toBe(24)
-    expect(sanitize({ v: 1, counties: Array.from({ length: 24 }, (_, i) => county(i + 1)) }).counties.length).toBe(24)
-    expect(sanitize({ v: 1, counties: Array.from({ length: 40 }, (_, i) => county(i + 1)) }).counties.length).toBe(24)
+  it('allows 12 and no more (the map has 12 lots)', () => {
+    expect(MAX_COUNTIES).toBe(12)
+    expect(sanitize({ v: 1, counties: Array.from({ length: 12 }, (_, i) => county(i + 1)) }).counties.length).toBe(12)
+    expect(sanitize({ v: 1, counties: Array.from({ length: 40 }, (_, i) => county(i + 1)) }).counties.length).toBe(12)
   })
 
-  it('13 or more counties all keep their own place: nothing is dropped or merged', () => {
-    const s = sanitize({ v: 1, counties: Array.from({ length: 18 }, (_, i) => county(i + 1)) })
-    expect(s.counties.map((c) => c.id)).toEqual(Array.from({ length: 18 }, (_, i) => 'c' + (i + 1)))
+  it('twelve counties all keep their own place: nothing is dropped or merged', () => {
+    const s = sanitize({ v: 1, counties: Array.from({ length: 12 }, (_, i) => county(i + 1)) })
+    expect(s.counties.map((c) => c.id)).toEqual(Array.from({ length: 12 }, (_, i) => 'c' + (i + 1)))
   })
 })

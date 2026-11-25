@@ -285,7 +285,7 @@ const LOT_Q = [[1, -1], [1, 1], [-1, 1], [-1, -1]]
 const CELLS = [[4.9, 4.9], [11.1, 4.9], [4.9, 11.1]] // the first 12 counties
 // counties 13 to 24: the old park corner becomes a lot, and there are two more along the roads. the park moves out to the corner.
 const CELLS_2 = [[11.1, 11.1], [17.3, 4.9], [4.9, 17.3]]
-export const BIG_CITY = 12 // with more counties than this the city grows a second ring
+export const BIG_CITY = 12 // with more counties than this the city grows a second ring. dormant: the app allows 12 counties (MAX_COUNTIES in store.js), raise that to switch it on
 // where the trees of a county stand, inside its plot (the last ones are cut first)
 const TREE_SLOTS = [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8], [0, -2.1], [0, 2.1], [-2.1, 0], [2.1, 0]]
 const HALF = [15, 22] // from the middle of the city to the edge of the board
