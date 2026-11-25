@@ -144,45 +144,6 @@ describe('where the accidents happen', () => {
   })
 })
 
-import { brickAt, floorTime, heightWhileBuilding, BRICKS_PER_FLOOR, BRICK_EVERY, BRICK_FLIGHT, PAINT_TIME } from '../src/cityRules.js'
-
-describe('the building crew', () => {
-  it('a brick leaves the hand, rises in an arc, and lands exactly on the wall', () => {
-    const from = [1, 0.9, 1], to = [3, 2.5, -1]
-    expect(brickAt(from, to, 0)).toEqual(from)
-    expect(brickAt(from, to, 1)).toEqual(to)
-    const mid = brickAt(from, to, 0.5)
-    expect(mid[0]).toBeCloseTo(2, 10)
-    expect(mid[2]).toBeCloseTo(0, 10)
-    expect(mid[1]).toBeGreaterThan((0.9 + 2.5) / 2 + 0.5) // above the straight line: an arc
-  })
-
-  it('never flies outside 0 to 1', () => {
-    expect(brickAt([0, 0, 0], [1, 1, 1], -3)).toEqual([0, 0, 0])
-    expect(brickAt([0, 0, 0], [1, 1, 1], 9)).toEqual([1, 1, 1])
-  })
-
-  it('the building rises in equal steps, one per brick, from what stood before to the new height', () => {
-    expect(heightWhileBuilding(2, 3, 0)).toBe(2)
-    expect(heightWhileBuilding(2, 3, BRICKS_PER_FLOOR)).toBe(3)
-    let last = 2
-    for (let landed = 1; landed <= BRICKS_PER_FLOOR; landed++) {
-      const h = heightWhileBuilding(2, 3, landed)
-      expect(h - last).toBeCloseTo(1 / BRICKS_PER_FLOOR, 10)
-      last = h
-    }
-    expect(heightWhileBuilding(2, 3, 99)).toBe(3) // extra bricks change nothing
-    expect(heightWhileBuilding(2, 3, -4)).toBe(2)
-  })
-
-  it('a floor takes a few seconds, not a blink and not a minute', () => {
-    expect(floorTime()).toBeCloseTo((BRICKS_PER_FLOOR - 1) * BRICK_EVERY + BRICK_FLIGHT + PAINT_TIME, 10)
-    expect(floorTime()).toBeGreaterThan(2.5)
-    expect(floorTime()).toBeLessThan(6)
-  })
-})
-
-
 import { assessSpending, ASSESS_DAYS } from '../src/cityRules.js'
 
 describe('where the fights are allowed (ten days to understand where the money goes)', () => {

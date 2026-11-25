@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
-import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS, brickAt, BRICKS_PER_FLOOR, BRICK_EVERY, BRICK_FLIGHT, PAINT_TIME } from './cityRules.js'
+import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from './cityRules.js'
+import { compare, timeline, claddingHeight, KITS, LIFT } from './construction.js'
 import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
 
 // helpers
@@ -357,6 +358,7 @@ export class CityScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.shadowMap.enabled = true
+    this.renderer.localClippingEnabled = true // the finished wall shows up under the painters
     this.renderer.shadowMap.type = THREE.PCFShadowMap
     this.renderer.setClearColor(0x000000, 0)
     container.appendChild(this.renderer.domElement)
@@ -559,7 +561,7 @@ export class CityScene {
         pick.userData.lot = i
         this.pickGroup.add(pick)
         this.lots.push({
-          i, pos, holder, border, pad, pick, size: LOT_SMALL, county: null, built: null, top: 1.5, pop: 1, target: 0, stepAt: 0, stepEvery: 0.5, crane: null, parts: {}, anims: [], dim: 0, dimTarget: 0, mats: [], bush: null,
+          i, pos, holder, border, pad, pick, size: LOT_SMALL, county: null, built: null, top: 1.5, pop: 1, target: 0, stepAt: 0, stepEvery: 0.5, crane: null, parts: {}, build: null, queue: [], dim: 0, dimTarget: 0, mats: [], bush: null,
         })
         const placed = this.lots[this.lots.length - 1]
         placed.trees = Array(TREES_PER_LOT).fill(null)
@@ -967,100 +969,386 @@ export class CityScene {
     }
   }
 
-  // ---- the crew that builds a new floor: bricks thrown one by one, the building rising with each, then painted ----
-  startCrew(lot, anims) {
-    if (lot.crew || !anims.length || !lot.county) return
-    const kit = BRICK_KITS[this.T.id] || BRICK_KITS.city
-    const centre = [lot.pos.x - 0.55 * lot.size, lot.pos.z - 0.55 * lot.size]
-    const small = this.T.id === 'lego' ? 0.78 : 1.05 // kids on the Lego map
-    const make = (k, role) => {
-      const p = this.folk()
-      const u = p.userData
-      if (!u.diver) { u.hat.visible = true; u.hat.material.color.set(0xffd60a) } // the yellow hard hat
-      const [sx, sz] = treeSpot(lot.pos.x, lot.pos.z, k)
-      const x = sx + (lot.pos.x - sx) * 0.4, z = sz + (lot.pos.z - sz) * 0.4 // a bit closer to the building, still off the pavement
-      p.position.set(x, 0.1, z)
-      p.rotation.y = Math.atan2(centre[0] - x, centre[1] - z)
-      p.scale.setScalar(0.001)
-      this.world.add(p)
-      return { p, role, size: small }
-    }
-    const workers = [make(0, 'layer'), make(2, 'layer'), make(4, 'painter')]
-    const roller = new THREE.Group() // the painter's roller, in the county's colour
-    bx(roller, 0.03, 0.4, 0.03, 0x6b5a3e, 0, -0.5, 0.12)
-    bx(roller, 0.24, 0.1, 0.1, new THREE.Color(lot.county.color).getHex(), 0, -0.72, 0.12)
-    workers[2].p.userData.arms[1].add(roller)
-    const mats = new Set()
-    for (const a of anims) a.g.traverse((n) => { if (n.material) for (const mm of Array.isArray(n.material) ? n.material : [n.material]) if (mm.userData.base) mats.add(mm) })
-    for (const mm of mats) mm.color.copy(WALL)
-    for (const a of anims) a.crew = true
-    lot.crew = { t: 0, phase: 'build', n: BRICKS_PER_FLOOR, launched: 0, landed: 0, workers, flying: [], mats: [...mats], kit, centre, show: 0, anims, before: anims[0].from }
+  // ---- building a floor for real ----
+  // the new model is built hidden. what stands is compared with it (see construction.js), the old roof is lifted off, the walls are laid
+  // brick by brick by bricklayers on a scaffold that rises with them, painters follow behind and the finished wall shows up under their
+  // rollers, the crane lifts the roof, domes and slabs into place. then the scaffold comes down and the finished model takes over.
+
+  // what a model is made of, in the frame of its group
+  describe(g) {
+    g.updateMatrixWorld(true)
+    const inv = new THREE.Matrix4().copy(g.matrixWorld).invert()
+    const out = []
+    g.traverse((m) => {
+      if (!m.isMesh) return
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld)
+      const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
+      rel.decompose(p, q, s)
+      const e = new THREE.Euler().setFromQuaternion(q, 'YXZ')
+      const mat = Array.isArray(m.material) ? m.material[0] : m.material
+      const color = mat && mat.color ? mat.color.getHex() : 0
+      const par = m.geometry.parameters || {}
+      const flat = Math.abs(e.x) < 0.03 && Math.abs(e.z) < 0.03
+      const quarter = Math.abs(Math.sin(2 * e.y)) < 0.03 // turned a quarter at most, so the sides still run along the axes
+      if (m.geometry.type === 'BoxGeometry') {
+        const turned = Math.abs(Math.sin(e.y)) > 0.7
+        const w = (turned ? par.depth * s.z : par.width * s.x), d = (turned ? par.width * s.x : par.depth * s.z), h = par.height * s.y
+        out.push({ mesh: m, kind: 'box', cx: p.x, cy: p.y, cz: p.z, w, d, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat && quarter })
+      } else if (m.geometry.type === 'CylinderGeometry') {
+        const h = par.height * s.y
+        out.push({ mesh: m, kind: 'cyl', cx: p.x, cy: p.y, cz: p.z, rt: par.radiusTop * s.x, rb: par.radiusBottom * s.x, seg: par.radialSegments, h, bottom: p.y - h / 2, top: p.y + h / 2, color, upright: flat })
+      } else {
+        const b = new THREE.Box3().setFromObject(m).applyMatrix4(inv)
+        const c = b.getCenter(new THREE.Vector3()), z = b.getSize(new THREE.Vector3())
+        out.push({ mesh: m, kind: 'other', cx: c.x, cy: c.y, cz: c.z, w: z.x, d: z.z, h: z.y, bottom: b.min.y, top: b.max.y, color, upright: false })
+      }
+    })
+    return out
   }
 
-  throwBrick(lot, which) {
-    const c = lot.crew
-    const w = c.workers[which]
-    const m = makeBrick(c.kit, this.rng)
-    const from = [w.p.position.x, 0.1 + 0.9 * w.size, w.p.position.z]
-    const frac = c.before + (1 - c.before) * Math.min(1, (c.landed + 1) / c.n) // how tall the building will be when this brick lands
-    const to = [c.centre[0] + (this.rng() - 0.5) * 0.9, Math.max(0.5, lot.top * frac), c.centre[1] + (this.rng() - 0.5) * 0.9]
-    m.position.set(from[0], from[1], from[2])
-    this.world.add(m)
-    c.flying.push({ m, t: 0, from, to })
-    w.throwAt = c.t
+  // somebody to work (a yellow hard hat, small kids on the Lego map)
+  makeCrewman(lot, role, k, kit) {
+    const p = this.folk()
+    const u = p.userData
+    if (!u.diver) { u.hat.visible = true; u.hat.material.color.set(0xffd60a) }
+    const [sx, sz] = treeSpot(lot.pos.x, lot.pos.z, k)
+    p.position.set(sx + (lot.pos.x - sx) * 0.4, 0.1, sz + (lot.pos.z - sz) * 0.4)
+    p.scale.setScalar(0.001)
+    this.world.add(p)
+    if (role === 'painter') { // the roller, in the county's colour
+      const roller = new THREE.Group()
+      bx(roller, 0.03, 0.4, 0.03, 0x6b5a3e, 0, -0.5, 0.12)
+      bx(roller, 0.24, 0.1, 0.1, new THREE.Color(lot.county.color).getHex(), 0, -0.72, 0.12)
+      u.arms[1].add(roller)
+    }
+    return { p, role, size: this.T.id === 'lego' ? 0.78 : 1.05, last: null }
   }
 
-  updateCrew(lot, dt) {
-    const c = lot.crew
-    c.t += dt
-    const leaving = c.phase === 'leave'
-    const size = Math.min(1, c.t / 0.4) * (leaving ? Math.max(0.001, 1 - c.leave / 0.5) : 1)
-    for (const w of c.workers) w.p.scale.setScalar(w.size * Math.max(0.001, size))
-    if (c.phase === 'build') {
-      while (c.launched < c.n && c.t >= 0.4 + c.launched * BRICK_EVERY) { this.throwBrick(lot, c.launched % 2); c.launched++ }
+  queueBuild(lot, jobs) {
+    lot.queue.push(...jobs)
+    this.setCrane(lot, true)
+    if (!lot.build) this.nextBuild(lot)
+  }
+
+  nextBuild(lot) {
+    const job = lot.queue.shift()
+    if (!job) { if (lot.target <= (lot.built ? lot.built.L : 0)) this.setCrane(lot, false); return }
+    const pending = Math.max(0, lot.target - lot.built.L) + lot.queue.length * 0.6
+    this.startBuild(lot, job, 1 + 0.7 * pending)
+  }
+
+  startBuild(lot, job, speed) {
+    const { g, old } = job
+    const id = this.T.id
+    const plan = compare(old ? this.describe(old.g) : [], this.describe(g))
+    const tl = timeline(plan, KITS[id] || KITS.city, Math.min(5, speed))
+    const kitColors = (BRICK_KITS[id] || BRICK_KITS.city).colors
+
+    const site = new THREE.Group() // bricks and scaffold live here, in the same frame as the model
+    site.position.copy(g.position)
+    site.scale.copy(g.scale)
+    lot.holder.add(site)
+    site.updateMatrixWorld(true)
+
+    const B = { job, g, old, plan, tl, site, t: 0, landed: 0, ptr: [0, 0, 0, 0], sides: [[], [], [], []], pieces: [], removes: [], scaf: null, platforms: new Map(), layers: [], painters: [] }
+    lot.build = B
+
+    // nothing of the new model shows until it is built: only the finished walls, behind a cut that rises with the work
+    const wallMeshes = new Set(plan.walls.map((w) => w.d.mesh))
+    g.visible = true
+    g.traverse((n) => { if (n.isMesh && !wallMeshes.has(n)) n.visible = false })
+    const top = new THREE.Plane(new THREE.Vector3(0, -1, 0), -1e4)
+    B.clipTop = top
+    B.clipped = []
+    const toWorldY = (y) => site.localToWorld(new THREE.Vector3(0, y, 0)).y
+    B.toWorldY = toWorldY
+    for (const w of plan.walls) {
+      const planes = [top]
+      if (w.grown) { const bot = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); w.bot = bot; planes.push(bot) } // the part that stood is the old model's
+      for (const mm of Array.isArray(w.d.mesh.material) ? w.d.mesh.material : [w.d.mesh.material]) {
+        mm.clippingPlanes = planes
+        mm.userData.outlineParameters = { visible: false }
+        mm.needsUpdate = true
+        B.clipped.push(mm)
+      }
     }
-    for (let i = c.flying.length - 1; i >= 0; i--) { // bricks in the air
-      const f = c.flying[i]
-      f.t += dt / BRICK_FLIGHT
-      const [x, y, z] = brickAt(f.from, f.to, f.t)
-      f.m.position.set(x, y, z)
-      f.m.rotation.y += dt * 9
-      f.m.rotation.x += dt * 4
-      if (f.t >= 1) { this.disposePart(f.m); c.flying.splice(i, 1); c.landed++ }
+
+    // the bricks: one drawing for all of them, shown one at a time as they are laid
+    const n = tl.bricks.length
+    if (n) {
+      const round = tl.kit.shape === 'ball' || tl.kit.shape === 'shell'
+      const geo = round ? new THREE.SphereGeometry(0.5, 8, 6) : new THREE.BoxGeometry(1, 1, 1)
+      const mat = L(0xffffff)
+      mat.userData.outlineParameters = { visible: false }
+      const inst = new THREE.InstancedMesh(geo, mat, n)
+      inst.frustumCulled = false
+      inst.castShadow = inst.receiveShadow = true
+      inst.count = 0
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color()
+      const up = new THREE.Vector3(0, 1, 0)
+      const lego = tl.kit.shape === 'lego'
+      const studs = lego ? new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 8), mat, n * 2) : null
+      if (studs) { studs.frustumCulled = false; studs.castShadow = true; studs.count = 0 }
+      tl.bricks.forEach((b, i) => {
+        b.ci = Math.floor(this.rng() * kitColors.length)
+        q.setFromAxisAngle(up, b.ry)
+        m4.compose(pos.set(b.x, b.y, b.z), q, sc.set(b.sx, b.sy, b.sz))
+        inst.setMatrixAt(i, m4)
+        col.setHex(kitColors[b.ci])
+        inst.setColorAt(i, col)
+        if (studs) for (const sgn of [-1, 1]) {
+          const dx = Math.cos(b.ry) * sgn * b.sx * 0.22, dz = -Math.sin(b.ry) * sgn * b.sx * 0.22
+          m4.compose(pos.set(b.x + dx, b.y + b.sy / 2 + 0.03, b.z + dz), q, sc.set(0.1, 0.07, 0.1))
+          studs.setMatrixAt(i * 2 + (sgn > 0 ? 1 : 0), m4)
+          studs.setColorAt(i * 2 + (sgn > 0 ? 1 : 0), col)
+        }
+        this.sidesOf(b, plan)
+        B.sides[b.side].push(b)
+      })
+      inst.instanceMatrix.needsUpdate = true
+      if (inst.instanceColor) inst.instanceColor.needsUpdate = true
+      site.add(inst)
+      B.inst = inst
+      if (studs) { studs.instanceMatrix.needsUpdate = true; if (studs.instanceColor) studs.instanceColor.needsUpdate = true; site.add(studs); B.studs = studs }
+      B.fly = [0, 1, 2, 3].map(() => {
+        const f = new THREE.Mesh(geo, L(0xffffff))
+        f.visible = false
+        f.castShadow = true
+        site.add(f)
+        return f
+      })
     }
-    c.show += (c.landed / c.n - c.show) * Math.min(1, dt * 14) // the building steps up with each brick that lands
-    for (const a of c.anims) a.t = c.phase === 'build' ? Math.min(0.999, c.show) : 1 - 1e-6
-    for (const w of c.workers) {
-      const u = w.p.userData
-      if (w.role === 'layer') {
-        const k = w.throwAt === undefined ? 9 : c.t - w.throwAt
-        const swing = k < 0.3 ? Math.sin((k / 0.3) * Math.PI) : 0 // the arm swings up and over as the brick leaves
-        u.arms[1].rotation.x = -0.4 - swing * 2.2
-        u.arms[0].rotation.x = -0.9 + Math.sin(c.t * 3) * 0.1
-      } else { // the painter rolls up and down the wall
-        u.arms[1].rotation.x = -1.3 + Math.sin(c.t * 7) * 0.6
+
+    // the scaffold goes round the walls
+    if (plan.walls.length) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+      for (const w of plan.walls) {
+        const d = w.d
+        const rx = d.kind === 'box' ? d.w / 2 : Math.max(d.rt, d.rb), rz = d.kind === 'box' ? d.d / 2 : Math.max(d.rt, d.rb)
+        x0 = Math.min(x0, d.cx - rx); x1 = Math.max(x1, d.cx + rx); z0 = Math.min(z0, d.cz - rz); z1 = Math.max(z1, d.cz + rz)
+      }
+      const o = 0.62 // the scaffold stands this far from the wall
+      B.scaf = { group: new THREE.Group(), x0: x0 - o, x1: x1 + o, z0: z0 - o, z1: z1 + o, grow: 0 }
+      site.add(B.scaf.group)
+      const hgt = tl.topAll + 0.5
+      for (const [x, z] of [[B.scaf.x0, B.scaf.z0], [B.scaf.x1, B.scaf.z0], [B.scaf.x0, B.scaf.z1], [B.scaf.x1, B.scaf.z1]]) bx(B.scaf.group, 0.07, hgt, 0.07, 0x8d8f94, x, 0, z)
+    }
+
+    // the people: a bricklayer for each side, two painters who also fit the small things
+    if (n) for (let s = 0; s < 4; s++) B.layers.push(this.makeCrewman(lot, 'layer', s, tl.kit))
+    for (let s = 0; s < 2; s++) B.painters.push(this.makeCrewman(lot, 'painter', 4 + s, tl.kit))
+    B.crew = [...B.layers, ...B.painters]
+
+    // pieces that are fitted (new) and lifted off (old roof)
+    for (const p of tl.pieces) {
+      const m = p.d.mesh
+      g.attach(m)
+      B.pieces.push({ ...p, mesh: m, pos: m.position.clone(), scale: m.scale.clone(), done: false })
+    }
+    for (const r of tl.removes) B.removes.push({ ...r, mesh: r.d.mesh, y0: r.d.mesh.position.y, done: false })
+    B.rope = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1, 0.03), L(0x2b2b2b))
+    B.rope.visible = false
+    this.world.add(B.rope)
+    if (lot.crane) lot.crane.userData.h = Math.max(lot.crane.userData.h, lot.top + 2.2)
+  }
+
+  // which way a brick faces outwards (for the bricklayer to stand on)
+  sidesOf(b, plan) {
+    const w = plan.walls[b.wall]
+    if (w.d.kind === 'box') { const nx = [0, 1, 0, -1][b.side], nz = [1, 0, -1, 0][b.side]; b.nx = nx; b.nz = nz } else { const l = Math.hypot(b.x - w.d.cx, b.z - w.d.cz) || 1; b.nx = (b.x - w.d.cx) / l; b.nz = (b.z - w.d.cz) / l }
+  }
+
+  // a platform of the scaffold at this height, put up when a bricklayer first needs it
+  platform(B, k) {
+    if (!B.scaf || B.platforms.has(k)) return
+    const { scaf } = B
+    const y = k * LIFT
+    const gp = new THREE.Group()
+    const len = (a, b) => b - a
+    bx(gp, len(scaf.x0, scaf.x1) + 0.5, 0.05, 0.42, 0xb08a52, (scaf.x0 + scaf.x1) / 2, y, scaf.z0 - 0.1)
+    bx(gp, len(scaf.x0, scaf.x1) + 0.5, 0.05, 0.42, 0xb08a52, (scaf.x0 + scaf.x1) / 2, y, scaf.z1 + 0.1)
+    bx(gp, 0.42, 0.05, len(scaf.z0, scaf.z1) + 0.5, 0xb08a52, scaf.x0 - 0.1, y, (scaf.z0 + scaf.z1) / 2)
+    bx(gp, 0.42, 0.05, len(scaf.z0, scaf.z1) + 0.5, 0xb08a52, scaf.x1 + 0.1, y, (scaf.z0 + scaf.z1) / 2)
+    bx(gp, len(scaf.x0, scaf.x1), 0.04, 0.04, 0x8d8f94, (scaf.x0 + scaf.x1) / 2, y + 0.42, scaf.z0 - 0.28)
+    bx(gp, len(scaf.x0, scaf.x1), 0.04, 0.04, 0x8d8f94, (scaf.x0 + scaf.x1) / 2, y + 0.42, scaf.z1 + 0.28)
+    scaf.group.add(gp)
+    B.platforms.set(k, gp)
+  }
+
+  updateBuild(lot, dt) {
+    const B = lot.build
+    B.t += dt
+    const { t, tl, site, g } = B
+    const kIn = Math.min(1, t / 0.45), kOut = Math.max(0.001, Math.min(1, (tl.end - t) / 0.8))
+    const crewK = Math.max(0.001, kIn * kOut)
+    site.updateMatrixWorld(true)
+    const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3()
+
+    // the old roof is lifted off first
+    for (const r of B.removes) {
+      const f = Math.min(1, Math.max(0, (t - r.start) / r.dur))
+      r.mesh.position.y = r.y0 + 2.6 * f * f
+      if (f >= 1 && !r.done) { r.done = true; r.mesh.visible = false }
+    }
+
+    // bricks land one after another
+    if (B.inst) {
+      while (B.landed < tl.bricks.length && tl.bricks[B.landed].land <= t) B.landed++
+      B.inst.count = B.landed
+      if (B.studs) B.studs.count = B.landed * 2
+    }
+
+    // the finished wall shows up behind the bricklayers
+    const clip = claddingHeight(tl, t)
+    B.clipTop.constant = B.toWorldY(clip)
+    for (const w of B.plan.walls) if (w.bot) w.bot.constant = -B.toWorldY(w.from)
+
+    // workers: where they stand, which way they face, what the arms do
+    const moveTo = (c, wx, wy, wz, fx, fz) => {
+      c.p.position.x += (wx - c.p.position.x) * Math.min(1, dt * 5)
+      c.p.position.z += (wz - c.p.position.z) * Math.min(1, dt * 5)
+      c.p.position.y += (wy - c.p.position.y) * Math.min(1, dt * 9)
+      c.p.rotation.y = Math.atan2(fx, fz)
+      c.p.scale.setScalar(c.size * crewK)
+    }
+    const feetAt = (y) => { const k = Math.max(0, Math.floor((y - 0.3) / LIFT)); this.platform(B, k); return [k, site.localToWorld(tmp2.set(0, k * LIFT + 0.04, 0)).y] }
+    B.layers.forEach((c, s) => {
+      const list = B.sides[s]
+      while (B.ptr[s] < list.length && list[B.ptr[s]].land <= t) B.ptr[s]++
+      const cur = list[B.ptr[s]], last = list[B.ptr[s] - 1]
+      const ref = cur || last
+      const fly = B.fly[s]
+      fly.visible = false
+      if (!ref) return
+      const [, fy] = feetAt(ref.y)
+      site.localToWorld(tmp.set(ref.x + ref.nx * 0.55, 0, ref.z + ref.nz * 0.55))
+      const out = tmp2.set(ref.nx, 0, ref.nz)
+      moveTo(c, tmp.x, fy, tmp.z, -ref.nx, -ref.nz)
+      const u = c.p.userData
+      const k = cur && t >= cur.start ? (t - cur.start) / Math.max(0.03, cur.land - cur.start) : 1
+      u.arms[0].rotation.x = -0.9
+      u.arms[1].rotation.x = -1.25 + Math.sin(k * Math.PI) * 0.4 // reaches to the wall, lays, comes back
+      if (cur && t >= cur.start && t < cur.land) { // the brick travels the short way from the hand to its place
+        const hand = site.worldToLocal(new THREE.Vector3(c.p.position.x, c.p.position.y + 0.95 * c.size * crewK, c.p.position.z).addScaledVector(out, 0))
+        const f = k
+        fly.position.set(hand.x + (cur.x - hand.x) * f, hand.y + (cur.y - hand.y) * f, hand.z + (cur.z - hand.z) * f)
+        fly.rotation.set(0, cur.ry, 0)
+        fly.scale.set(cur.sx, cur.sy, cur.sz)
+        fly.material.color.setHex((BRICK_KITS[this.T.id] || BRICK_KITS.city).colors[cur.ci])
+        fly.visible = true
+      }
+    })
+    B.painters.forEach((c, i) => {
+      const u = c.p.userData
+      const hand = B.pieces.find((p) => p.mode === 'hand' && p.by === i && t >= p.start - 0.7 && t <= p.start + p.dur + 0.15)
+      if (hand) { // fitting something small
+        const d = hand.pos
+        const [, fy] = feetAt(d.y)
+        site.localToWorld(tmp.set(d.x, 0, d.z))
+        const away = tmp2.set(d.x - (B.scaf ? (B.scaf.x0 + B.scaf.x1) / 2 : 0), 0, d.z - (B.scaf ? (B.scaf.z0 + B.scaf.z1) / 2 : 0))
+        away.normalize()
+        moveTo(c, tmp.x + away.x * 0.6, B.scaf ? fy : 0.1, tmp.z + away.z * 0.6, -away.x, -away.z)
+        u.arms[1].rotation.x = -1.3 + Math.sin((t - hand.start) * 9) * 0.3
+        u.arms[0].rotation.x = -0.9
+      } else if (B.scaf && t >= tl.brickStart) { // painting: up and down the wall, where the finished wall is just showing
+        const s = i === 0 ? 0 : 2
+        const sc = B.scaf
+        const along = Math.sin(t * 0.8 + i * 2) * 0.7
+        const x = s === 0 ? (sc.x0 + sc.x1) / 2 + along * (sc.x1 - sc.x0) / 2 : (sc.x0 + sc.x1) / 2 - along * (sc.x1 - sc.x0) / 2
+        const z = s === 0 ? sc.z1 - 0.1 : sc.z0 + 0.1
+        const [, fy] = feetAt(Math.max(clip - 0.2, 0.3))
+        site.localToWorld(tmp.set(x, 0, z))
+        moveTo(c, tmp.x, fy, tmp.z, 0, s === 0 ? -1 : 1)
+        u.arms[1].rotation.x = -1.3 + Math.sin(t * 7 + i) * 0.6
         u.arms[0].rotation.x = -0.5
+      } else {
+        const yard = tmp.set(lot.pos.x + 0.9 * lot.size, 0.1, lot.pos.z - 0.9 * lot.size)
+        moveTo(c, yard.x, 0.1, yard.z, -1, 1)
+        u.arms[1].rotation.x = -0.4
+        u.arms[0].rotation.x = -0.4
+      }
+    })
+
+    // the scaffold: poles first, a platform wherever somebody works; it comes down at the end
+    if (B.scaf) {
+      B.scaf.grow += ((t < tl.end - 0.8 ? 1 : 0) - B.scaf.grow) * Math.min(1, dt * 6)
+      B.scaf.group.scale.set(1, Math.max(0.001, B.scaf.grow), 1)
+      B.scaf.group.visible = t >= tl.removes.reduce((m, r) => Math.max(m, r.start + r.dur), 0) * 0.8
+    }
+
+    // pieces: slabs poured, small things set in by hand, big things hoisted by the crane
+    const cu = lot.crane && lot.crane.userData
+    let load = null
+    for (const p of B.pieces) {
+      if (p.done || t < p.start) continue
+      const f = Math.min(1, (t - p.start) / p.dur)
+      const m = p.mesh
+      m.visible = true
+      if (p.mode === 'pour') {
+        m.scale.set(p.scale.x, Math.max(0.02, p.scale.y * f), p.scale.z)
+        m.position.y = p.pos.y - (p.scale.y * (1 - Math.max(0.02, f))) * (p.d.h / 2)
+      } else if (p.mode === 'hand') {
+        const e = f * f * (3 - 2 * f)
+        m.scale.set(p.scale.x * (0.3 + 0.7 * e), p.scale.y * (0.3 + 0.7 * e), p.scale.z * (0.3 + 0.7 * e))
+      } else if (lot.crane) {
+        const aim = site.localToWorld(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z))
+        const yard = new THREE.Vector3(lot.crane.position.x - 0.9, 0.1 + p.d.h * 0.5, lot.crane.position.z + 0.9)
+        const hoist = Math.max(aim.y + 0.7, B.toWorldY(Math.max(tl.topAll, p.d.top)) + 0.9)
+        let x, y, z
+        if (f < 0.12) { x = yard.x; z = yard.z; y = yard.y } // waiting for the hook
+        else if (f < 0.45) { const e = (f - 0.12) / 0.33; x = yard.x; z = yard.z; y = yard.y + (hoist - yard.y) * (e * e * (3 - 2 * e)) } // up
+        else if (f < 0.75) { const e = (f - 0.45) / 0.3, s = e * e * (3 - 2 * e); x = yard.x + (aim.x - yard.x) * s; z = yard.z + (aim.z - yard.z) * s; y = hoist } // across
+        else { const e = (f - 0.75) / 0.25, s = e * e * (3 - 2 * e); x = aim.x; z = aim.z; y = hoist + (aim.y - hoist) * s } // down
+        m.position.copy(g.worldToLocal(new THREE.Vector3(x, y, z)))
+        load = { x, y, z, top: y + p.d.h / 2 * g.scale.y }
+      }
+      if (f >= 1) { p.done = true; m.position.copy(p.pos); m.scale.copy(p.scale) }
+    }
+    if (cu) { // the crane arm swings to its load, or rests
+      const cx = lot.crane.position.x, cz = lot.crane.position.z
+      const aimX = load ? load.x : lot.pos.x - 0.55 * lot.size, aimZ = load ? load.z : lot.pos.z - 0.55 * lot.size
+      const want = Math.atan2(-(aimZ - cz), aimX - cx) + (load ? 0 : Math.sin(t * 0.5) * 0.5)
+      const diff = Math.atan2(Math.sin(want - cu.arm.rotation.y), Math.cos(want - cu.arm.rotation.y))
+      cu.arm.rotation.y += Math.max(-dt * 2.6, Math.min(dt * 2.6, diff))
+      B.rope.visible = !!load
+      if (load) {
+        const tipY = lot.crane.position.y + cu.arm.position.y * cu.grow
+        const len = Math.max(0.1, tipY - load.top)
+        B.rope.position.set(load.x, load.top + len / 2, load.z)
+        B.rope.scale.set(1, len, 1)
       }
     }
-    if (c.phase === 'build' && c.landed >= c.n) { c.phase = 'paint'; c.paint = 0 }
-    if (c.phase === 'paint') {
-      c.paint += dt
-      const k = Math.min(1, c.paint / PAINT_TIME)
-      for (const mm of c.mats) {
-        const target = mm.userData.base.clone()
-        if (lot.dim > 0) target.lerp(DIM, lot.dim * 0.78)
-        mm.color.copy(WALL).lerp(target, k)
-      }
-      if (c.paint >= PAINT_TIME + 0.25) { c.phase = 'leave'; c.leave = 0; for (const a of c.anims) a.t = 1 }
+
+    if (t >= tl.end) this.finishBuild(lot)
+  }
+
+  // the model is done (or a change came in: then it is done at once)
+  finishBuild(lot, all = false) {
+    const B = lot.build
+    if (B) {
+      const { g, old, site, plan } = B
+      g.traverse((n) => { if (n.isMesh) n.visible = true })
+      for (const mm of B.clipped) { mm.clippingPlanes = null; delete mm.userData.outlineParameters; mm.needsUpdate = true }
+      for (const p of B.pieces) { p.mesh.position.copy(p.pos); p.mesh.scale.copy(p.scale) }
+      if (old) this.disposePart(old.g)
+      if (B.inst) B.inst.dispose()
+      if (B.studs) B.studs.dispose()
+      this.disposePart(site)
+      this.disposePart(B.rope)
+      for (const c of B.crew) this.disposePart(c.p)
+      lot.build = null
+      void plan
     }
-    if (c.phase === 'leave') {
-      c.leave += dt
-      if (c.leave >= 0.5) {
-        for (const w of c.workers) this.disposePart(w.p)
-        for (const f of c.flying) this.disposePart(f.m)
-        lot.crew = null
+    if (all) { // the rest of the queue goes in without a crew
+      while (lot.queue.length) {
+        const j = lot.queue.shift()
+        j.g.traverse((n) => { if (n.isMesh) n.visible = true })
+        j.g.visible = true
+        if (j.old) this.disposePart(j.old.g)
       }
+      return
     }
+    this.nextBuild(lot)
   }
 
   // somebody to work or fight: a person, or a diver under the sea
@@ -1316,6 +1604,7 @@ export class CityScene {
 
   // only rebuilds the pieces that changed
   rebuildLot(lot, c, L, animate = false) {
+    this.finishBuild(lot, true) // a change while a crew is working: their job is done at once, with the rest of the queue
     const parts = (lot.parts ||= {})
     const want = {}
     if (c) {
@@ -1350,7 +1639,7 @@ export class CityScene {
     for (const k of Object.keys(parts)) {
       if (!want[k]) { this.disposePart(parts[k].g); delete parts[k] }
     }
-    lot.anims = (lot.anims || []).filter((a) => a.g.parent)
+    const jobs = []
     for (const [k, w] of Object.entries(want)) {
       const old = parts[k]
       if (old && old.sig === w.sig) continue
@@ -1368,14 +1657,8 @@ export class CityScene {
         }
       })
       if (lot.dim > 0) for (const mm of mats) mm.color.copy(mm.userData.base).lerp(DIM, lot.dim * 0.78)
-      if (animate) {
-        // grow from the current height, or from the ground if new
-        const from = old && old.h > 0 ? Math.min(0.97, (old.h * (old.g.scale.y / old.sy)) / hgt) : 0.02
-        lot.anims = lot.anims.filter((a) => a.key !== k)
-        lot.anims.push({ key: k, g, sy: w.sc[1], from, t: 0 })
-        g.scale.y = w.sc[1] * from
-      }
-      if (old) this.disposePart(old.g)
+      const building = animate && c && L > 0 // a county that levels up gets a real building site
+      if (building) { g.visible = false; jobs.push({ k, g, old, w }) } else if (old) this.disposePart(old.g)
       parts[k] = { g, sig: w.sig, h: hgt, sy: w.sc[1], mats }
     }
     lot.mats = Object.values(parts).flatMap((p) => p.mats)
@@ -1384,7 +1667,7 @@ export class CityScene {
     if (lot.dim < 0) lot.dim = 0
     if (!animate) { lot.size = stageSize(lot); this.sizeLot(lot) }
     this.setTrees(lot, treesLeft(L), !!animate) // a new floor costs a tree or two
-    if (animate && c) this.startCrew(lot, lot.anims.filter((a) => a.t === 0 && !a.crew)) // and a crew builds it, brick by brick
+    if (jobs.length) this.queueBuild(lot, jobs) // and a crew builds it: walls brick by brick, the roof by crane
   }
 
   // a lot's outline, pad and everything on it are smaller while the county has little spending, which leaves the footpath beside it roomier
@@ -1563,34 +1846,25 @@ export class CityScene {
         this.sizeLot(lot)
       }
       this.traffic.lots[lot.i].size = lot.size
-      if (lot.county && lot.built && lot.target > lot.built.L) {
+      if (lot.county && lot.built && lot.target > lot.built.L && !lot.build && !lot.queue.length) { // the next floor starts when the crew is done with this one
         const now = performance.now()
         if (now >= lot.stepAt) {
           lot.stepAt = now + lot.stepEvery * 1000
           this.rebuildLot(lot, lot.county, lot.built.L + 1, true)
-          if (lot.target <= lot.built.L) this.setCrane(lot, false)
+          if (lot.target <= lot.built.L && !lot.build) this.setCrane(lot, false)
           else if (lot.crane) lot.crane.userData.h = Math.max(lot.crane.userData.h, lot.top + 2.2)
         }
       }
       if (lot.crane) {
         const cu = lot.crane.userData
         cu.grow += ((cu.leaving ? 0 : 1) - cu.grow) * Math.min(1, dt * 5)
-        cu.arm.rotation.y += dt * 1.2
+        if (!lot.build) cu.arm.rotation.y += dt * 1.2 // (a crew's crane is steered by the crew)
         cu.pole.scale.y += (cu.h - cu.pole.scale.y) * Math.min(1, dt * 4)
         cu.arm.position.y = 0.2 + cu.pole.scale.y
         lot.crane.scale.setScalar(Math.max(0.001, cu.grow))
         if (cu.leaving && cu.grow < 0.02) { this.disposePart(lot.crane); lot.crane = null }
       }
-      if (lot.crew) this.updateCrew(lot, dt)
-      if (lot.anims && lot.anims.length) {
-        const dur = Math.max(1, Math.min(2.7, lot.stepEvery * 1.6))
-        for (const a of lot.anims) {
-          if (!a.crew) a.t = Math.min(1, a.t + dt / dur) // the crew drives its own floor, brick by brick
-          const e = a.crew ? a.t : a.t * a.t * (3 - 2 * a.t) // (otherwise: smooth start and stop, no bounce)
-          a.g.scale.y = a.sy * (a.from + (1 - a.from) * e)
-        }
-        lot.anims = lot.anims.filter((a) => a.t < 1)
-      }
+      if (lot.build) this.updateBuild(lot, dt)
       if (Math.abs(lot.dim - lot.dimTarget) > 0.002) {
         lot.dim = lot.dim < 0 ? lot.dimTarget : lot.dim + (lot.dimTarget - lot.dim) * Math.min(1, dt * 7)
         for (const mm of lot.mats) {
@@ -1690,7 +1964,6 @@ export class CityScene {
 }
 
 const DIM = new THREE.Color(0x9a9a98)
-const WALL = new THREE.Color(0xeeeae0) // a new floor starts out as raw white plaster, then the painter rolls it into its colour
 
 // what each map builds with: bricks on the classic map, Lego bricks, planks, ice cubes, sandbags, shells, basketballs
 const BRICK_KITS = {
@@ -1704,20 +1977,6 @@ const BRICK_KITS = {
   court: { colors: [0xe8742a], shape: 'ball' },
 }
 
-function makeBrick(kit, rng) {
-  const g = new THREE.Group()
-  const c = kit.colors[Math.floor(rng() * kit.colors.length)]
-  if (kit.shape === 'lego') {
-    bx(g, 0.32, 0.16, 0.2, c, 0, 0, 0)
-    for (const sx of [-1, 1]) cyl(g, 0.05, 0.06, c, sx * 0.08, 0.1, 0, 8)
-  } else if (kit.shape === 'plank') bx(g, 0.5, 0.07, 0.14, c, 0, 0, 0)
-  else if (kit.shape === 'cube') bx(g, 0.24, 0.24, 0.24, c, 0, 0, 0)
-  else if (kit.shape === 'sandbag') bx(g, 0.38, 0.14, 0.22, c, 0, 0, 0)
-  else if (kit.shape === 'shell') mk(g, new THREE.SphereGeometry(0.15, 8, 6), c, 0, 0, 0).scale.y = 0.7
-  else if (kit.shape === 'ball') mk(g, new THREE.SphereGeometry(0.18, 10, 8), c, 0, 0, 0)
-  else bx(g, 0.34, 0.16, 0.17, c, 0, 0, 0)
-  return g
-}
 // the size of a lot follows its level: small while there is little spending, bigger (and the footpath thinner) the more is spent
 const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 

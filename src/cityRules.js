@@ -68,26 +68,6 @@ export const accidentChance = (danger, seconds) => 1 - Math.exp(-(Math.max(0, da
 // a fight goes on for as long as there is any spending in the county, and stops when its expenses come down to zero
 export const fightGoesOn = (spent) => spent > 0
 
-// ---------- the building crew ----------
-
-// a new floor is built from this many bricks, thrown one by one; the building rises a little as each one lands
-export const BRICKS_PER_FLOOR = 10
-export const BRICK_EVERY = 0.22 // seconds between two bricks leaving a worker's hand
-export const BRICK_FLIGHT = 0.55 // seconds a brick is in the air
-export const PAINT_TIME = 1.1 // the painter rolls the new floor from white to its colour
-
-// where a flying brick is at time t (0 to 1): a straight line from the worker's hand to the wall, lifted into an arc
-export function brickAt(from, to, t, lift = 1.2) {
-  const k = Math.min(1, Math.max(0, t))
-  return [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k + 4 * lift * k * (1 - k), from[2] + (to[2] - from[2]) * k]
-}
-
-// how long one floor takes from the first brick to the last coat of paint
-export const floorTime = (bricks = BRICKS_PER_FLOOR) => (bricks - 1) * BRICK_EVERY + BRICK_FLIGHT + PAINT_TIME
-
-// how tall the building is while the crew builds: it starts at what stood before and gains an equal step with every brick that lands
-export const heightWhileBuilding = (before, after, landed, bricks = BRICKS_PER_FLOOR) => before + (after - before) * (Math.min(Math.max(landed, 0), bricks) / bricks)
-
 // ---------- where the fights are allowed ----------
 
 export const ASSESS_DAYS = 10
