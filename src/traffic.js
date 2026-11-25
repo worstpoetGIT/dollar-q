@@ -543,7 +543,8 @@ export function placeWalkers(n, rng) {
     const axis = i % 2 ? 'x' : 'z'
     const side = i % 4 < 2 ? 1 : -1
     const dir = rng() > 0.5 ? 1 : -1
-    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.55 + rng() * 0.5, hl: 0.3, hw: 0.24, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
+    // everybody walks at a decent pace (one or two used to crawl at half the speed of the others)
+    const w = { id: i, active: true, axis, side, road: axis + side, dir, t: 0, speed: 0, base: 0.85 + rng() * 0.35, hl: 0.3, hw: 0.24, lat: 0, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0 }
     setLane(w, [])
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
