@@ -5,7 +5,7 @@ import { makeMaps, MAP_LIST } from './maps.js'
 import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from './cityRules.js'
 import { compare, timeline, paintEdge, KITS, LIFT } from './construction.js'
 import { poseAt, nextSegment, stances } from './fight.js'
-import { setObstacles, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
+import { setObstacles, sweepClear, uArc, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startCrash, endCrash, carPose } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -445,6 +445,7 @@ export class CityScene {
         this.lamp(sg * 1.62, i)
       }
     }
+    if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('debug')) window.__traffic = { sweepClear, uArc } // (for looking into things from the browser)
     this.lampPosts = (this.ring2 ? [-18, -12, -6, 6, 12, 18] : [-12, -6, 6, 12]).flatMap((i) => [-1, 1].flatMap((sg) => [{ x: i, z: sg * 1.62, r: 0.1 }, { x: sg * 1.62, z: i, r: 0.1 }]))
     setObstacles(this.lampPosts) // the lamp posts, for the cars that turn round
     this.buildSignals()
@@ -847,10 +848,11 @@ export class CityScene {
       if (a.dir === b.dir && Math.sign(a.lat) === Math.sign(b.lat) && gap > 1 && gap < 6.5) { meet = { kind: 'rear', t: b.t + b.dir * Math.max(b.speed, 1) * 2.6 } } // (b drives on a little before it is hit)
       else if (a.dir !== b.dir && Math.sign(a.lat) !== Math.sign(b.lat) && gap > 5 && gap < 13) meet = { kind: 'head', t: (a.t + b.t) / 2 }
       // the crash must happen on the street in front of the county, away from the crossroad and inside the board
-      if (meet && Math.abs(meet.t) >= 5.6 && Math.abs(meet.t) <= edge && Math.abs(meet.t - r.along) <= 9) pairs.push({ a, b, kind: meet.kind })
+      if (meet && Math.abs(meet.t) >= 7.5 && Math.abs(meet.t) <= edge && Math.abs(meet.t - r.along) <= 9) pairs.push({ a, b, kind: meet.kind })
     }
-    if (!pairs.length) return false
-    const pick = pairs[Math.floor(this.rng() * pairs.length)]
+    const pool = this.forceKind ? pairs.filter((q) => q.kind === this.forceKind) : pairs // (forceKind: a way to see one kind of crash when testing)
+    if (!pool.length) return false
+    const pick = pool[Math.floor(this.rng() * pool.length)]
     startCrash(pick.a, pick.b, pick.kind)
     this.crashes.push({ lot: k, a: pick.a, b: pick.b, kind: pick.kind, phase: 'bump', t: 0, axis: r.axis, fight: null })
     return true

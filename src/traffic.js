@@ -183,7 +183,8 @@ function passPlan(m, movers, cfg) {
       if (p(o) - o.hl - o.base * time < end + 1) return null // it would reach me before i am done
     } else {
       if (inAlt && p(o) + o.hl > start - 1 && p(o) - o.hl < end + 1) return null
-      const inHome = Math.abs(o.lat - m.lane) < near + o.hw
+      const inHome = Math.abs(o.lat - m.lane) < near + (o.hwe || o.hw)
+      if (inHome && p(o) > p(lead) && (o.crash || o.speed < 0.5) && p(o) - o.hl < p(m) + 22) return null // a queue or a wreck stands in my lane up ahead: passing would only leave me stuck out in the other lane
       if (inHome && p(o) > p(lead) && p(o) - o.hl - (p(lead) + lead.hl) < 2 * m.hl + 2 * cfg.clear) return null // no room to pull back in
     }
   }
@@ -396,7 +397,7 @@ function turnArc(c) {
 }
 
 // the half circle of a U-turn from where the car stands
-function uArc(c) {
+export function uArc(c) {
   const h = c.axis === 'x' ? [c.dir, 0] : [0, c.dir]
   const start = c.axis === 'x' ? [c.t, c.lat] : [c.lat, c.t]
   const toward = -Math.sign(c.lane)
@@ -449,7 +450,8 @@ function walkerRect(w, more = 0, wide = 0) {
 
 // a long car swings its tail out when it turns, so before it starts the curve the whole swept area must be free,
 // also for the next two seconds of whoever is still coming (at the speed they have now)
-function sweepClear(c, cars, walkers, sig, arc = null) {
+export function sweepClear(c, cars, walkers, sig, arc = null, why = null) { // (why: a list to say what is in the way, for finding out)
+  const no = (reason) => { if (why) why.push(reason); return false }
   const a = arc || turnArc(c)
   const speed = TURN_SPEED[a.kind]
   for (let i = 0; i <= 18; i++) {
@@ -458,7 +460,7 @@ function sweepClear(c, cars, walkers, sig, arc = null) {
     for (const f of fixed) { // a lamp post: the body of the car must stay clear of it
       const px = f.x - mine.x, pz = f.z - mine.z
       const along = px * mine.hx + pz * mine.hz, across = -px * mine.hz + pz * mine.hx
-      if (Math.hypot(Math.max(Math.abs(along) - mine.hl, 0), Math.max(Math.abs(across) - mine.hw, 0)) < f.r + 0.08) return false
+      if (Math.hypot(Math.max(Math.abs(along) - mine.hl, 0), Math.max(Math.abs(across) - mine.hw, 0)) < f.r + 0.08) return no('lamp post')
     }
     const by = s / speed + 0.5 // by the time i am at this spot, anybody coming has covered up to this much road
     for (const o of cars) {
@@ -466,11 +468,11 @@ function sweepClear(c, cars, walkers, sig, arc = null) {
       if (o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < 0.4 && o.t * c.dir < c.t * c.dir) continue // in my lane behind me: the curve never reaches it
       let reach = 0.3
       if (!o.arc && !o.crash && !(toLine(o) >= 0 && !allows(sig, o))) reach += Math.min(o.base * by, o.speed * by + 0.5 * CAR.accel * by * by) // it may speed up (unless a red holds it)
-      if (rectsTouch(mine, rectOf(o, reach, 0.08))) return false
+      if (rectsTouch(mine, rectOf(o, reach, 0.08))) return no(`car t=${o.t.toFixed(1)} lat=${o.lat.toFixed(2)} ${o.crash ? 'wreck' : o.arc ? 'turning' : 'driving'} s=${s.toFixed(1)}`)
     }
     for (const w of walkers) {
       const holdsStill = w.waiting && !walkersGo(sig, w.axis) // somebody waiting at their red light is not going anywhere
-      if (rectsTouch(mine, walkerRect(w, holdsStill ? 0 : Math.max(w.speed, w.base) * by + 0.3, 0.1))) return false
+      if (rectsTouch(mine, walkerRect(w, holdsStill ? 0 : Math.max(w.speed, w.base) * by + 0.3, 0.1))) return no('person')
     }
   }
   return true
@@ -501,10 +503,10 @@ function finishTurn(c) {
   const over = Math.max(0, a.s - a.len)
   if (a.kind === 'u') { // facing the other way in the other lane, on the same road, at the same place: off it goes (it turns at the next crossroad if it likes)
     const pick = [null, 'right', 'left'][Math.floor(c.base * 100) % 3]
-    Object.assign(c, { dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.tEnd, turn: pick && turnFits(c.hl, c.hw, pick).ok ? pick : 'straight', arc: null, passing: null, still: 0, stuck: 0, backed: 0 })
+    Object.assign(c, { dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.tEnd, turn: pick && turnFits(c.hl, c.hw, pick).ok ? pick : 'straight', arc: null, passing: null, still: 0, stuck: 0, backed: 0, rerouted: false })
     return
   }
-  Object.assign(c, { axis: a.newAxis, road: a.newAxis, dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.dir2 * (BOX + over), turn: 'straight', arc: null, passing: null, still: 0 })
+  Object.assign(c, { axis: a.newAxis, road: a.newAxis, dir: a.dir2, lane: a.lat2, alt: -a.lat2, lat: a.lat2, goal: a.lat2, t: a.dir2 * (BOX + over), turn: 'straight', arc: null, passing: null, still: 0, rerouted: false })
 }
 
 function stepTurn(c, cars, dt) {
@@ -519,9 +521,32 @@ function stepTurn(c, cars, dt) {
   c.still = 0
 }
 
+// is there a wreck on this arm of the crossroad (the road 'axis', on the side 'sign' of the middle)?
+const armBlocked = (cars, axis, sign) => cars.some((o) => o.active && o.crash && o.road === axis && Math.sign(o.t) === sign)
+
+// the direction a car will be heading after it turns right or left
+const exitDir = (c, kind) => (c.axis === 'x' ? (kind === 'right' ? c.dir : -c.dir) : (kind === 'right' ? -c.dir : c.dir))
+
+let roadSense = true
+export const setRoadSense = (on) => { roadSense = on } // (the tests turn it off to get a queue of cars behind a wreck)
+
+// road sense: a car that is about to go into a road with a wreck on it takes another road instead, and one that was about to turn into it goes straight on
+function reroute(c, cars) {
+  if (!roadSense || c.rerouted || c.arc || c.crash || toLine(c) < 0 || toLine(c) > 16) return
+  if (c.turn === 'straight') {
+    if (!armBlocked(cars, c.road, c.dir)) return
+    c.rerouted = true
+    const options = ['right', 'left'].filter((k) => turnFits(c.hl, c.hw, k).ok && !armBlocked(cars, other(c.axis), exitDir(c, k)))
+    if (options.length) c.turn = options[Math.floor(c.base * 100) % options.length]
+  } else if (armBlocked(cars, other(c.axis), exitDir(c, c.turn))) {
+    c.rerouted = true
+    if (!armBlocked(cars, c.road, c.dir)) c.turn = 'straight'
+  }
+}
+
 // stuck behind a wreck: is there one ahead on my road (close enough that it is what the queue is waiting for), and am i held up by it?
 function stuckBehindWreck(c, cars) {
-  if (c.speed > 0.05 || Math.abs(c.t) < 7 || c.passing || c.turn !== 'straight') return false
+  if (c.speed > 0.05 || Math.abs(c.t) < 5 || c.passing || c.turn !== 'straight') return false
   let wreck = false
   for (const o of cars) if (o !== c && o.active && o.crash && o.road === c.road && (o.t - c.t) * c.dir > 0 && (o.t - c.t) * c.dir < 16) wreck = true
   return wreck && followLimit(c, cars, CAR) < 0.4
@@ -535,7 +560,8 @@ function tryUTurn(c, cars, walkers, sig, dt) {
   if (c.hl > 1.6 || Math.abs(c.lat - c.lane) > 0.05) return false // (a really long vehicle, a train or a long sled, cannot swing round and waits)
   const a = uArc(c)
   if (sweepClear(c, cars, walkers, sig, a)) { c.arc = a; c.backed = 0; placeOnArc(c); return true }
-  if ((c.backed || 0) < 2.6 && roomBehind(c, cars)) { c.t -= c.dir * 0.8 * dt; c.backed = (c.backed || 0) + 0.8 * dt; c.still = 0; return true }
+  // (it never backs into the crossroad)
+  if ((c.backed || 0) < 2.6 && Math.abs(c.t - c.dir * 0.8 * dt) > 5 && roomBehind(c, cars)) { c.t -= c.dir * 0.8 * dt; c.backed = (c.backed || 0) + 0.8 * dt; c.still = 0; return true }
   return false
 }
 
@@ -544,6 +570,7 @@ function stepCar(c, cars, walkers, tr, dt) {
   if (c.freeSlide > 0) c.freeSlide -= dt
   if (c.yaw) { c.yaw = Math.abs(c.yaw) < 0.01 ? 0 : c.yaw * (1 - Math.min(1, 3 * dt)); c.hwe = c.yaw ? sideReach(c) : 0 } // a car that has been in a crash straightens up again once it drives off
   if (c.arc) { stepTurn(c, cars, dt); return }
+  reroute(c, cars)
   c.stuck = stuckBehindWreck(c, cars) ? c.stuck + dt : 0
   if (c.stuck > 1.5 && tryUTurn(c, cars, walkers, tr.sig, dt)) return
   const sig = tr.sig
@@ -561,7 +588,9 @@ function stepCar(c, cars, walkers, tr, dt) {
   lim = Math.min(lim, followLimit(c, cars, CAR))
   if (c.waitMerge) lim = Math.min(lim, brake(Math.max(0, homeGap(c, cars) - 0.8), CAR.brake)) // (out in the other lane, slowing down for whatever is stopped in mine)
 
-  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || allows(sig, c)
+  // (and a car that goes straight on does not start across the crossroad if a car is standing in its lane right beyond it: that would block the crossroad)
+  const beyond = c.turn !== 'straight' || toLine(c) < 0 || !cars.some((o) => o !== c && o.active && !o.arc && o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < c.hw + (o.hwe || o.hw) && pos(o) - o.hl > BOX && pos(o) - o.hl < BOX + 2 * c.hl + 1.2 && (o.crash || o.speed < 0.4))
+  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || (allows(sig, c) && beyond)
   const turnAt = -BOX - pos(c) // how far the middle of a turning car is from the start of its curve
   const mayTurn = c.turn === 'straight' || turnAt > 4 || turnOK(c, cars, walkers, sig)
   if (!mayTurn) lim = Math.min(lim, brake(Math.max(0, turnAt - 0.05), CAR.brake)) // wait for the room before the curve
@@ -620,7 +649,7 @@ export function spawnCar(cars, rng, anywhere = false, prefer = null) { // prefer
   const r = rng()
   let turn = passed || r < 0.7 ? 'straight' : r < 0.88 ? 'right' : 'left' // most go straight on, a few turn right, fewer turn left
   if (turn !== 'straight' && (c.hl >= 1.8 || !turnFits(c.hl, c.hw, turn).ok)) turn = 'straight' // a vehicle that would brush the pole or does not fit round the corner goes straight on
-  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null, waitMerge: false, yaw: 0, stuck: 0, backed: 0, hwe: 0 })
+  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null, waitMerge: false, yaw: 0, stuck: 0, backed: 0, hwe: 0, rerouted: false })
   c.speed = c.base
   if (!roomFor(c, cars)) { c.active = false; return null }
   return c

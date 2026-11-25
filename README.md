@@ -70,6 +70,8 @@ The whole map is made with Three.js, and the smooth scrolling on the other pages
 5. Wireframe
 6. Basketball Court
 
+<p align="center"><img src="docs/screenshots/maps.jpg" alt="The six maps: Classic City, Lego, Japan, Ice Age, Wireframe, Basketball Court" width="760"></p>
+
 ### Adding an expense
 
 The big **+** in the middle opens a number pad. You pick the county, the account (which sets the currency), the payment method, how many people the expense was for, the date, and an optional note. Every tap has a little haptic.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, carPose, turnFits } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -417,8 +417,9 @@ describe('traffic: turning back behind a wreck', () => {
     if (kind === 'rear') { drive(x, 0.75, 1, 9, 2.4); drive(y, 0.75, 1, 5.6, 2.4) } else { drive(x, 0.75, 1, 7, 2.6); drive(y, -0.75, -1, 17, 2.6) }
     const [a, b] = kind === 'rear' ? [y, x] : [x, y]
     startCrash(a, b, kind)
-    const out = { turned: 0, overlaps: [], queue: 0, queueSteps: 0 }
+    const out = { turned: 0, overlaps: [], queue: 0, queueSteps: 0, rerouted: 0, stuck: 0 }
     const wasU = new Map()
+    const seenRe = new Set()
     let spawnIn = 0.5
     const dt = 1 / 30
     for (let step = 0; step < (minutes * 60) / dt; step++) {
@@ -430,8 +431,9 @@ describe('traffic: turning back behind a wreck', () => {
         if (wasU.get(c) && !now && c.active) out.turned++
         wasU.set(c, now)
       }
+      for (const c of cars) if (c.rerouted && !seenRe.has(c)) { seenRe.add(c); out.rerouted++ }
       const act = cars.filter((c) => c.active)
-      if (step * dt > (minutes * 60) / 2) { out.queue += act.filter((c) => c !== a && c !== b && c.speed < 0.05 && Math.abs(c.t) > 7).length; out.queueSteps++ } // how many stand waiting beside the wreck, on average, in the second half
+      if (step * dt > (minutes * 60) / 2) { out.queue += act.filter((c) => c !== a && c !== b && c.speed < 0.05 && Math.abs(c.t) > 7).length; out.queueSteps++; out.stuck += act.filter((c) => (c.stuck || 0) > 1.5).length } // how many stand waiting beside the wreck, on average, in the second half (and how many of them are held up by the wreck itself)
       const all = [...act, ...walkers]
       for (let i = 0; i < all.length && out.overlaps.length < 3; i++) for (let j = i + 1; j < all.length; j++) {
         if (all[i] === a && all[j] === b) continue
@@ -443,16 +445,32 @@ describe('traffic: turning back behind a wreck', () => {
 
   for (const kind of ['rear', 'head']) {
     it(`${kind === 'rear' ? 'rear-end' : 'head-on'} wreck: cars stuck behind it turn back, nobody overlaps anybody, and the queue does not grow for ever`, () => {
-      let turned = 0
-      for (const seed of [1, 2, 3]) {
-        const r = scene(kind, seed, 3)
-        expect(r.overlaps).toEqual([])
-        expect(r.queue / r.queueSteps).toBeLessThan(4) // a queue forms and clears, it does not grow for ever
-        turned += r.turned
-      }
-      expect(turned).toBeGreaterThan(2)
+      setRoadSense(false) // (cars that do not know about the wreck, so a queue forms behind it)
+      try {
+        let turned = 0
+        for (const seed of [1, 2, 3]) {
+          const r = scene(kind, seed, 3)
+          expect(r.overlaps).toEqual([])
+          expect(r.queue / r.queueSteps).toBeLessThan(4) // a queue forms and clears, it does not grow for ever
+          turned += r.turned
+        }
+        expect(turned).toBeGreaterThan(2)
+      } finally { setRoadSense(true) }
     }, 240000)
   }
+
+  it('road sense: cars on their way to a road with a wreck on it take another road, so nobody ends up stuck, and nobody overlaps anybody', () => {
+    let rerouted = 0
+    for (const kind of ['rear', 'head']) {
+      for (const seed of [1, 2]) {
+        const r = scene(kind, seed, 3)
+        expect(r.overlaps).toEqual([])
+        expect(r.stuck / r.queueSteps).toBeLessThan(1) // (hardly anybody is held up by the wreck)
+        rerouted += r.rerouted
+      }
+    }
+    expect(rerouted).toBeGreaterThan(3)
+  }, 240000)
 })
 
 describe('traffic: turning at the crossroad', () => {
