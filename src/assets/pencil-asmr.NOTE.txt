@@ -1,3 +1,3 @@
 pencil-asmr.wav: the pencil-on-paper sound under the opening splashes.
-It is made from the owner's own file (asmr-sound-effect-of-a-7ir3di7g.wav, its first 2.55 s), stretched to be 1.3 times slower without changing its pitch.
+It is made from the owner's own file (asmr-sound-effect-of-a-7ir3di7g.wav, its first 3.7 s), stretched to be 1.3 times slower (4.85 s long) without changing its pitch.
 Licence of the original: provided by the app's owner; the source site and its licence were not recorded. Check before publishing a release.

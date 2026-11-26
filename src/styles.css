@@ -79,7 +79,7 @@ select.field { appearance: none; -webkit-appearance: none; }
 .splash.out { opacity: 0; pointer-events: none; }
 .splash svg { width: min(62vw, 280px); height: auto; overflow: visible; }
 .draw { stroke-dasharray: 1 2; stroke-dashoffset: 1; opacity: 0; }
-.draw.go { animation: draw var(--dur, 1s) cubic-bezier(.55,.1,.3,1) var(--delay, 0s) both; }
+.draw.go { animation: draw calc(var(--dur, 1s) * var(--k, 1)) cubic-bezier(.55,.1,.3,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes draw { 0% { stroke-dashoffset: 1; opacity: 0; } 1% { stroke-dashoffset: .995; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 1; } }
 
 /* onboarding */
@@ -244,27 +244,27 @@ select.field { appearance: none; -webkit-appearance: none; }
 .splash.full { background: var(--sbg, var(--bg)); }
 .splash.full svg { width: min(84vw, 420px); }
 .sp-drop { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
-.go .sp-drop { animation: spDrop .55s cubic-bezier(.3,1.5,.5,1) var(--delay, 0s) both; }
+.go .sp-drop { animation: spDrop calc(.55s * var(--k, 1)) cubic-bezier(.3,1.5,.5,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spDrop { 0% { opacity: 0; transform: translateY(-120px) rotate(var(--rot, 0deg)); } 15% { opacity: 1; } 100% { opacity: 1; transform: none; } }
 .sp-pop { opacity: 0; transform-box: fill-box; transform-origin: 50% 50%; }
-.go .sp-pop { animation: spPop .4s cubic-bezier(.3,1.6,.5,1) var(--delay, 0s) both; }
+.go .sp-pop { animation: spPop calc(.4s * var(--k, 1)) cubic-bezier(.3,1.6,.5,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spPop { 0% { opacity: 0; transform: scale(.2); } 100% { opacity: 1; transform: none; } }
 .sp-fade { opacity: 0; }
-.go .sp-fade { animation: spFade .5s ease var(--delay, 0s) both; }
+.go .sp-fade { animation: spFade calc(.5s * var(--k, 1)) ease calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spFade { to { opacity: 1; } }
 .sp-ball { transform-box: fill-box; transform-origin: 50% 100%; opacity: 0; }
-.go .sp-ball { animation: spBall 1.3s cubic-bezier(.4,0,.6,1) var(--delay, 0s) both; }
+.go .sp-ball { animation: spBall calc(1.3s * var(--k, 1)) cubic-bezier(.4,0,.6,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spBall { 0% { opacity: 1; transform: translateY(-190px); } 32% { opacity: 1; transform: translateY(0); } 48% { opacity: 1; transform: translateY(-52px); } 62% { transform: translateY(0); } 74% { transform: translateY(-20px); } 84% { transform: translateY(0); } 92% { transform: translateY(-6px); } 100% { opacity: 1; transform: none; } }
 .sp-ride { transform: translateX(-260px); }
-.go .sp-ride { animation: spRide 1.6s cubic-bezier(.2,.7,.3,1) var(--delay, 0s) both; }
+.go .sp-ride { animation: spRide calc(1.6s * var(--k, 1)) cubic-bezier(.2,.7,.3,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spRide { to { transform: none; } }
 .sp-snow { opacity: 0; }
-.go .sp-snow { animation: spSnow 3s linear var(--delay, 0s) both; }
+.go .sp-snow { animation: spSnow calc(3s * var(--k, 1)) linear calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spSnow { 0% { opacity: 0; transform: translateY(-20px); } 15% { opacity: .9; } 100% { opacity: .9; transform: translateY(230px); } }
 @media (prefers-reduced-motion: reduce) { .sp-drop, .sp-pop, .sp-ball, .sp-ride, .sp-snow { animation-duration: .01s !important; animation-delay: 0s !important; } }
 
 /* a brick that is built in place: it is pressed down onto the one below with a little click (no falling) */
 .sp-snap { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
-.go .sp-snap { animation: spSnap .3s cubic-bezier(.3,1.3,.6,1) var(--delay, 0s) both; }
+.go .sp-snap { animation: spSnap calc(.3s * var(--k, 1)) cubic-bezier(.3,1.3,.6,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spSnap { 0% { opacity: 0; transform: translateY(-14px) scale(1.05, .96); } 55% { opacity: 1; transform: translateY(1.5px) scale(.98, 1.03); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sp-snap { animation-duration: .01s !important; animation-delay: 0s !important; } }

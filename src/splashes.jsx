@@ -2,7 +2,8 @@
 // each scene is a function of "go" (the animation starts when it turns true) and takes about three seconds.
 import { MAP_LIST } from './maps.js'
 
-export const SPLASH_MS = 3300 // the animation and the pencil sound last this long
+export const SPLASH_MS = 5000 // the animation and the pencil sound last this long
+export const SPLASH_SLOW = 1.4 // every time in the scenes below is written for about 3.5 seconds; this stretches them to fill SPLASH_MS
 
 const S = 'M108 64c-18-8-38 2-38 18 0 20 40 22 40 44 0 16-22 24-42 14M92 48 86 178'
 const Q = 'M140 94c2-20 36-26 44-8 8 18-18 24-24 38'
@@ -81,19 +82,24 @@ function Japan({ go }) {
   )
 }
 
-/* ---------- Wireframe: the outlines are drawn like lines on a plan, then the red ring ---------- */
+/* ---------- Wireframe: the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes), drawn as outlines like lines on a plan ---------- */
 function Wire({ go }) {
   const grey = '#e9e9e9'
+  const Outline = ({ d, dur, delay }) => (
+    <>
+      <Draw go={go} d={d} dur={dur} delay={delay} stroke="#111" strokeWidth="22" />
+      <Draw go={go} d={d} dur={dur} delay={delay} stroke={grey} strokeWidth="16" />
+    </>
+  )
   return (
     <svg viewBox="0 0 240 240" aria-label="$?">
       <g transform="translate(120 120) scale(.74) translate(-128 -118)">
+        <Outline d={Q} dur=".85" delay="0.1" />
+        <Circ go={go} cx="158" cy="154" r="16" dur=".5" delay="1.0" stroke="#d8232a" strokeWidth="4.4" />
         <g transform="translate(-4 4)">
-          <Draw go={go} d={S} dur="1.4" delay="0.1" stroke="#111" strokeWidth="22" />
-          <Draw go={go} d={S} dur="1.4" delay="0.1" stroke={grey} strokeWidth="16" />
+          <Outline d={S1} dur="1.1" delay="1.1" />
+          <Outline d={S2} dur=".5" delay="2.1" />
         </g>
-        <Draw go={go} d={Q} dur="1" delay="1.5" stroke="#111" strokeWidth="22" />
-        <Draw go={go} d={Q} dur="1" delay="1.5" stroke={grey} strokeWidth="16" />
-        <Circ go={go} cx="158" cy="154" r="16" dur=".7" delay="2.6" stroke="#d8232a" strokeWidth="4.4" />
       </g>
     </svg>
   )

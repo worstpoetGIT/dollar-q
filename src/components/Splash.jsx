@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { splashFor, SPLASH_MS } from '../splashes.jsx'
+import { splashFor, SPLASH_MS, SPLASH_SLOW } from '../splashes.jsx'
 import { startPencil, preloadPencil } from '../pencil.js'
 
 preloadPencil() // (the recording is fetched as soon as the app loads)
@@ -17,7 +17,7 @@ export default function Splash({ map = 'city', onDone, sound = true }) {
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); stop() }
   }, [onDone, sound])
   return (
-    <div className={'splash full' + (go ? ' go' : '') + (out ? ' out' : '')} style={style}>
+    <div className={'splash full' + (go ? ' go' : '') + (out ? ' out' : '')} style={{ ...style, '--k': SPLASH_SLOW }}>
       <Scene go={go} />
     </div>
   )
