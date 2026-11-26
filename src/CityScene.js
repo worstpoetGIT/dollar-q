@@ -454,10 +454,24 @@ export class CityScene {
     if (T.studs) {
       const pts = []
       const sm = Math.floor(E - 1)
-      for (let x = -sm; x <= sm; x++) for (let z = -sm; z <= sm; z++) if (Math.abs(x) > 1.7 && Math.abs(z) > 1.7) pts.push([x, z])
+      // the lot pads are higher (top at 0.20) than the slab they stand on (top at 0.10): a stud sits on whichever one is under it,
+      // and one that would straddle the edge of a pad is left out (it was half buried in the pad and flickered against it)
+      const pads = LOT_Q.flatMap(([qx, qz]) => (this.ring2 ? [...CELLS, ...CELLS_2] : CELLS).map(([cx, cz]) => [qx * cx, qz * cz]))
+      const HALF = 2.275, R = 0.2
+      const rest = (x, z) => { // the height of the surface under a stud, or null when it straddles a pad edge
+        let h = 0.1
+        for (const [px, pz] of pads) {
+          const dx = Math.abs(x - px), dz = Math.abs(z - pz)
+          if (dx > HALF + R + 0.01 || dz > HALF + R + 0.01) continue
+          if (dx <= HALF - R - 0.01 && dz <= HALF - R - 0.01) h = 0.2
+          else return null
+        }
+        return h
+      }
+      for (let x = -sm; x <= sm; x++) for (let z = -sm; z <= sm; z++) if (Math.abs(x) > 1.7 && Math.abs(z) > 1.7) { const h = rest(x, z); if (h !== null) pts.push([x, z, h]) }
       const im = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 10), L(shade(new THREE.Color(m.pad.color).getHex(), -0.05)), pts.length)
       const mat = new THREE.Matrix4()
-      pts.forEach(([x, z], k) => { mat.makeTranslation(x, 0.135, z); im.setMatrixAt(k, mat) })
+      pts.forEach(([x, z, h], k) => { mat.makeTranslation(x, h + 0.03, z); im.setMatrixAt(k, mat) })
       im.receiveShadow = true
       s.add(im)
     }
