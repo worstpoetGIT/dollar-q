@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import 'lenis/dist/lenis.css'
 import Splash from './components/Splash.jsx'
 import SplashTester from './components/SplashTester.jsx'
@@ -16,6 +16,7 @@ import * as store from './store.js'
 import { useStore, setState, runFixed, ready } from './store.js'
 import { startSync, useSyncStatus } from './sync/service.js'
 import { fmt } from './util.js'
+import { setAppIcon } from './appIcon.js'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar } from '@capacitor/status-bar'
 
@@ -29,6 +30,9 @@ export default function App() {
 function MainApp() {
   const s = useStore()
   const [splash, setSplash] = useState(!new URLSearchParams(location.search).has('nosplash'))
+  // the icon on the home screen follows the map: it changes when the map is changed (not when the app opens, which would show the phone's "icon changed" message each time)
+  const lastMap = useRef(s.map)
+  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city') } }, [s.map])
   const [tab, setTab] = useState('home')
   const [sub, setSub] = useState(null)
   const [adding, setAdding] = useState(null)
