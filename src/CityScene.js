@@ -4,7 +4,7 @@ import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js'
 import { makeMaps, MAP_LIST } from './maps.js'
 import { treesLeft, TREES_PER_LOT, treeSpot, roadTaken, accidentWeights, fightGoesOn, accidentIsDue } from './cityRules.js'
 import { compare, timelineWithin, paintEdge, KITS, LIFT, BUILD_SECONDS } from './construction.js'
-import { setObstacles, sweepClear, uArc, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startHit, endCrash, carPose, dispatchCar, sendWatcher, releaseWatcher } from './traffic.js'
+import { setObstacles, sweepClear, uArc, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LOT_SMALL, lotSize, startHit, endCrash, carPose, dispatchCar, sendWatcher, releaseWatcher, walkTip, TIP_FADE } from './traffic.js'
 
 // helpers
 const shade = (c, a) => new THREE.Color(c).offsetHSL(0, 0, a).getHex()
@@ -1555,6 +1555,15 @@ export class CityScene {
   }
 
 
+  // how see-through somebody is (1: solid). the materials are made see-through only while they are fading, so the rest of the time nothing is drawn differently
+  fadePerson(w, k) {
+    if (k >= 1 && !w.faded) return
+    if (!w.mats) { w.mats = []; w.p.traverse((o) => { if (o.isMesh) w.mats.push(o.material) }) }
+    const solid = k >= 1
+    for (const m of w.mats) { m.transparent = !solid; m.opacity = solid ? 1 : Math.max(0.02, k); m.depthWrite = solid }
+    w.faded = !solid
+  }
+
   // somebody to work or fight
   folk() {
     return makePerson(this.rng)
@@ -2109,6 +2118,9 @@ export class CityScene {
     for (const w of this.walkers) {
       if (w.down || !w.active) { w.p.visible = !!(w.active || w.down); continue } // (somebody lying on the footpath is placed by the accident, somebody not on the street is not drawn)
       w.p.visible = true
+      // at the tip of the footpath people fade out as they leave and fade in as they arrive
+      const fade = Math.max(0, Math.min(1, (walkTip() - Math.abs(w.t)) / TIP_FADE))
+      this.fadePerson(w, fade)
       w.ph += dt * w.speed * 7 // the stride follows how fast they really go, so waiting people stand still
       const k = Math.min(1, w.speed * 4)
       const sw = Math.sin(w.ph) * k

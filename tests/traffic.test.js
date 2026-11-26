@@ -139,7 +139,7 @@ describe('traffic: room on the footpath follows how big the lots are', () => {
       expect(r.crashes).toEqual([])
       expect(r.outsideLine).toBe(0)
       expect(r.minGap).toBeGreaterThan(0.04) // even while getting past somebody
-      expect(r.settledGap).toBeGreaterThan(0.2) // and a roomy gap the rest of the time
+      expect(r.settledGap).toBeGreaterThan(0.04) // and the same neat gap the rest of the time (the pavement is a fixed strip next to the road)
     }
   }, 60000)
 
@@ -188,11 +188,9 @@ describe('traffic: the footpath gets thinner the more is spent', () => {
     return Math.abs(w.alt - w.lane)
   }
 
-  it('an empty or tiny lot leaves wide lanes, a big one squeezes them to the tightest gap', () => {
+  it('the pavement is the same strip next to the road whatever the lot beside it: small lots do not draw people in to them', () => {
     const gaps = [0.55, 0.7, 0.85, 1].map(gapAt)
-    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThanOrEqual(gaps[i - 1] + 1e-9)
-    expect(gaps[0]).toBeGreaterThan(gaps[3] + 0.25) // you can see the difference
-    expect(gaps[3]).toBeGreaterThanOrEqual(0.52)   // but even the tightest still lets two people pass
+    for (const g of gaps) { expect(g).toBeGreaterThanOrEqual(0.52); expect(Math.abs(g - gaps[0])).toBeLessThan(1e-9) }
   })
 
   it('at every size people stay inside the lines and never touch', () => {

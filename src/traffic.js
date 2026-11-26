@@ -29,7 +29,7 @@ export const lotSize = (level) => Math.min(LOT_FULL, 0.55 + 0.45 * (1 - Math.exp
 const LOT_MIDDLE = 4.9
 const INNER = 1.67 // the lane next to the road
 const LINE_GAP = 0.1 // people keep this far from the line round a lot (never on the edge of the house)
-const SPACING = [0.528, 1.1] // how far the second lane is from the first: least (a big lot squeezes the footpath) and most (an empty or tiny lot leaves lots of room)
+const SPACING = [0.528, 0.528] // how far the second lane is from the first: always the same, the pavement is a fixed strip next to the road (however small the lot beside it is, nobody wanders in to it)
 export const LANES = [INNER, INNER + SPACING[0]]
 
 export const newCar = (hl, hw) => ({
@@ -711,6 +711,10 @@ export function spawnCar(cars, rng, anywhere = false, prefer = null) { // prefer
 
 // ---------- people ----------
 
+// the very end of the footpath: people walk to here and are gone, and come in from here (the scene fades them out and in over the last stretch)
+export const walkTip = () => WALK.edge + reach + 1.4
+export const TIP_FADE = 1.3
+
 // where the lot lines are beside this footpath, around position t (distance from the middle of the road)
 function lineAt(w, lots, t) {
   let edge = LOT_MIDDLE - LOT_HALF * (lots.length ? LOT_SMALL : 1) // no lot right here: as much room as a small lot gives
@@ -784,7 +788,7 @@ function plazaLimit(w, sig, cars) {
 function turnAround(w, lots) {
   w.dir = -w.dir
   w.waiting = false
-  w.t = Math.max(-(WALK.edge + reach), Math.min(WALK.edge + reach, w.t))
+  w.t = Math.max(-walkTip(), Math.min(walkTip(), w.t))
   w.passing = null
   w.still = 0
   setLane(w, lots)
@@ -823,9 +827,9 @@ function stepWalker(w, walkers, cars, tr, dt) {
   slide(w, walkers, WALK, dt)
   w.t += w.dir * w.speed * dt
   w.still = w.speed < 0.03 && !w.waiting ? w.still + dt : 0
-  if (w.leaving && Math.abs(w.t) > WALK.edge + reach - 0.4) { w.active = false; w.leaving = false; return } // (an onlooker who walks off the end of the footpath is gone)
-  if (Math.abs(w.t) > WALK.edge + reach - 0.4 && w.dir === Math.sign(w.t)) { w.active = false; w.away = 3 + (w.id % 4); return } // (they walk off the end of the footpath and are gone, they do not turn round)
-  if (Math.abs(w.t) > WALK.edge + reach || (w.still > 20 && !w.watch)) turnAround(w, tr.lots)
+  if (w.leaving && Math.abs(w.t) > walkTip()) { w.active = false; w.leaving = false; return } // (an onlooker who walks off the end of the footpath is gone)
+  if (Math.abs(w.t) > walkTip() && w.dir === Math.sign(w.t)) { w.active = false; w.away = 3 + (w.id % 4); return } // (they walk to the tip of the footpath and are gone, they do not turn round)
+  if (w.still > 20 && !w.watch) turnAround(w, tr.lots)
 }
 
 // the traffic lets an emergency vehicle in from the end of the road: same lane and way as the car that crashed, it parks at 'spot' (its nose there)
@@ -840,7 +844,7 @@ export function dispatchCar(c, cars, axis, lane, spot, special) {
 // an onlooker comes in from the end of the footpath on 'side' of the road 'axis' and walks to 'spot', and watches from there
 export function sendWatcher(w, walkers, axis, side, spot) {
   const way = spot === null ? Math.sign(w.t) || 1 : Math.sign(spot) // (no spot: somebody walks back on to the street from the end of the footpath they were taken from)
-  const end = way * (WALK.edge + reach - 0.6)
+  const end = way * (walkTip() - 0.05)
   if (walkers.some((o) => o !== w && o.active && o.axis === axis && o.side === side && Math.abs(o.t - end) < 1.8)) return false // somebody is at the end of the footpath: not yet
   Object.assign(w, { axis, side, road: axis + side, dir: -way, t: end, speed: w.base, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0, blocked: 0, watch: spot === null ? null : { t: spot, at: false }, leaving: false, down: false, hitBy: null })
   setLane(w, [])
