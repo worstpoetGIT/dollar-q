@@ -68,11 +68,9 @@ The whole map is made with Three.js, and the smooth scrolling on the other pages
 3. Japan (anime look)
 4. Ice Age
 5. Wireframe
-6. Warzone
-7. Under the Ocean
-8. Basketball Court
+6. Basketball Court
 
-<p align="center"><img src="docs/screenshots/maps.jpg" alt="The Maps picker, one screenshot per map: Classic City, Lego, Japan, Ice Age, Wireframe, Warzone, Under the Ocean, Basketball Court" width="760"></p>
+<p align="center"><img src="docs/screenshots/maps.jpg" alt="The six maps: Classic City, Lego, Japan, Ice Age, Wireframe, Basketball Court" width="760"></p>
 
 ### Adding an expense
 

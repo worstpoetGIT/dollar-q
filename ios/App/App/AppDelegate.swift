@@ -42,3 +42,34 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return config
     }
 }
+
+// switches the icon of the app on the home screen (one icon for every map); iOS shows its own "You have changed the icon" message
+@objc(AppIconPlugin)
+public class AppIconPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AppIconPlugin"
+    public let jsName = "AppIcon"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setIcon", returnType: CAPPluginReturnPromise)
+    ]
+
+    // name: the name of the alternate icon (for example "AppIcon-Lego"); empty or missing: the main icon
+    @objc func setIcon(_ call: CAPPluginCall) {
+        let wanted = call.getString("name") ?? ""
+        let target: String? = wanted.isEmpty ? nil : wanted
+        DispatchQueue.main.async {
+            let app = UIApplication.shared
+            guard app.supportsAlternateIcons else { call.resolve(["changed": false]); return }
+            if app.alternateIconName == target { call.resolve(["changed": false]); return }
+            app.setAlternateIconName(target) { error in
+                if let error = error { call.reject(error.localizedDescription) } else { call.resolve(["changed": true]) }
+            }
+        }
+    }
+}
+
+// the screen of the app: the normal Capacitor one, with the icon plugin added
+class MainViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(AppIconPlugin())
+    }
+}

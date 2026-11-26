@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
+import { MAP_LIST } from './maps.js'
 import { uid, ymOf, shiftYm, daysIn, CURRENCIES, shareFor, splitShares } from './util.js'
 import { openNativeDb } from './db/native.js'
 import { ensureSchema } from './db/schema.js'
@@ -9,28 +10,28 @@ import { SYNCED_SETTINGS, pick } from './sync/engine.js'
 
 const KEY = 'dollar-q:v1'
 
-export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other']
+export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other', 'Gulliver']
 export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot']
 export const PALETTE = ['#e5383b', '#3a86ff', '#8338ec', '#b08968', '#2d936c', '#ff7f50', '#8d6e63', '#118ab2', '#f4a259', '#d62f8b', '#4361ee', '#e056a0']
-export const MAX_COUNTIES = 12
+export const MAX_COUNTIES = 12 // the map has 12 lots. (the city can grow a second ring for up to 24, see BIG_CITY in CityScene.js, but that is switched off)
 export const MAX_ACCOUNTS = 5
 export const MAX_SUB = 5
 
 const county = (name, group, style, i, icon) => ({ id: 'c' + (i + 1), name, group, style, icon, color: PALETTE[i % PALETTE.length] })
 
 export const DEFAULT_COUNTIES = [
-  county('Home & Rent', 'Home', 'house', 0, 'home'),
+  county('Home & Rent', 'Gulliver', 'house', 0, 'home'),
   county('Utilities', 'Home', 'tower', 1, 'bolt'),
   county('Subscriptions', 'Media', 'shop', 2, 'repeat'),
-  county('Banking', 'Other', 'dome', 3, 'bank'),
+  county('Investments', 'Gulliver', 'dome', 3, 'bank'),
   county('Groceries', 'Food', 'market', 4, 'cart'),
   county('Restaurants', 'Food', 'cafe', 5, 'fork'),
   county('Cafes', 'Food', 'cafe', 6, 'coffee'),
   county('Transit', 'Other', 'depot', 7, 'bus'),
-  county('Miscellaneous', 'Other', 'market', 8, 'dots'),
+  county('Banking', 'Gulliver', 'tower', 8, 'bank'),
   county('Entertainment', 'Media', 'cinema', 9, 'film'),
   county('Electronics', 'Shopping', 'tech', 10, 'chip'),
-  county('Fashion', 'Shopping', 'shop', 11, 'shirt'),
+  county('Gifts', 'Gulliver', 'shop', 11, 'tag'),
 ]
 
 const initial = () => ({
@@ -145,7 +146,7 @@ export function sanitize(raw) {
   return {
     v: 1, entered: raw.entered === true, setupDone: raw.setupDone === true, stateName: str(raw.stateName, 28),
     season: 'summer', appearance: oneOf(raw.appearance, ['system', 'light', 'dark'], 'system'), minimal: raw.minimal === true,
-    map: typeof raw.map === 'string' && /^[a-z]{2,12}$/.test(raw.map) ? raw.map : 'city',
+    map: typeof raw.map === 'string' && MAP_LIST.some((m) => m.id === raw.map) ? raw.map : 'city', // (a map that is gone, like ocean or war in old saves, becomes the classic city)
     currency: oneOf(raw.currency, CODES, accounts[0].currency), counties, methods, accounts, expenses, fixed,
   }
 }
@@ -373,26 +374,41 @@ export const deleteExpense = (id) => setState((s) => ({ ...s, expenses: s.expens
 export function runFixed() {
   const now = new Date()
   const ym = ymOf(now.getTime())
-  const due = []
+  const due = [] // { f, m: the month, day }
   for (const f of state.fixed) {
     if (f.lastPosted === ym) continue
-    const day = Math.min(f.day, daysIn(ym))
-    if (now.getDate() >= day) due.push({ f, day })
+    // the months the app was not opened in are logged too (up to a year back): the subscription was charged all the same
+    const months = []
+    if (f.lastPosted && f.lastPosted < ym) {
+      let m = shiftYm(f.lastPosted, 1)
+      while (m < ym) months.push(m), (m = shiftYm(m, 1))
+    }
+    months.splice(0, Math.max(0, months.length - 12))
+    months.push(ym)
+    for (const m of months) {
+      const day = Math.min(f.day, daysIn(m))
+      if (m < ym || now.getDate() >= day) due.push({ f, m, day })
+    }
   }
   if (!due.length) return
   setState((s) => {
     const exps = [...s.expenses]
+    const have = new Set(exps.map((e) => e.id))
     const fixed = s.fixed.map((f) => {
-      const d = due.find((x) => x.f.id === f.id)
-      if (!d) return f
+      const mine = due.filter((x) => x.f.id === f.id)
+      if (!mine.length) return f
       const acc = s.accounts.find((a) => a.id === f.accountId) || s.accounts[0]
-      exps.push({
-        id: 'fx-' + f.id + '-' + ym, // the same on every phone, so two phones posting the same month do not make two expenses
-        countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
-        methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
-        note: f.name, ts: new Date(now.getFullYear(), now.getMonth(), d.day, 9).getTime(), fixedId: f.id,
-      })
-      return { ...f, lastPosted: ym }
+      for (const d of mine) {
+        const id = 'fx-' + f.id + '-' + d.m // the same on every phone, so two phones posting the same month do not make two expenses
+        if (have.has(id)) continue
+        have.add(id)
+        exps.push({
+          id, countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
+          methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
+          note: f.name, ts: new Date(Number(d.m.slice(0, 4)), Number(d.m.slice(5)) - 1, d.day, 9).getTime(), fixedId: f.id,
+        })
+      }
+      return { ...f, lastPosted: mine[mine.length - 1].m }
     })
     return { ...s, expenses: exps, fixed }
   })

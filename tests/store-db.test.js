@@ -123,9 +123,10 @@ describe('after that', () => {
     store.setState((s) => ({ ...s, fixed: s.fixed.map((f) => ({ ...f, day: 1, lastPosted: '2000-01' })) }))
     store.runFixed()
     const ids = store.getState().expenses.filter((e) => e.fixedId === 'f1' && e.id.startsWith('fx-')).map((e) => e.id)
-    expect(ids).toHaveLength(1)
-    expect(ids[0]).toMatch(/^fx-f1-\d{4}-\d{2}$/)
-    expect(ids[0].length).toBeLessThanOrEqual(24)
+    expect(ids.length).toBeGreaterThanOrEqual(1) // (this month, and the months before it that were missed, up to a year)
+    expect(ids.length).toBeLessThanOrEqual(13)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ids) { expect(id).toMatch(/^fx-f1-\d{4}-\d{2}$/); expect(id.length).toBeLessThanOrEqual(24) }
   })
 })
 

@@ -1,31 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { splashFor, SPLASH_MS, SPLASH_HOLD, SPLASH_SLOW } from '../splashes.jsx'
+import { startSound, preloadSound } from '../splashSound.js'
 
-export default function Splash({ onDone }) {
+preloadSound() // (the recording is fetched as soon as the app loads)
+
+// the opening splash of the map in use: the $ and ? drawn in that map's way, with the sound of one cut of scissors through paper
+export default function Splash({ map = 'city', onDone, sound = true }) {
   const [go, setGo] = useState(false)
   const [out, setOut] = useState(false)
-  const [dot, setDot] = useState(false)
+  const { Scene, style, k } = splashFor(map)
+  const doneRef = useRef(onDone) // (the parent hands over a new onDone on every render: the splash must not start over, nor play its sound again, when that happens)
+  doneRef.current = onDone
   useEffect(() => {
     const t0 = setTimeout(() => setGo(true), 150)
-    const td = setTimeout(() => setDot(true), 2150)
-    const t1 = setTimeout(() => setOut(true), 3300)
-    const t2 = setTimeout(onDone, 3850)
-    return () => { clearTimeout(t0); clearTimeout(td); clearTimeout(t1); clearTimeout(t2) }
-  }, [onDone])
-  const cls = 'draw' + (go ? ' go' : '')
+    const stop = sound ? startSound({ endsAt: SPLASH_MS / 1000 }) : () => {} // (the cut ends exactly when the splash does)
+    const t1 = setTimeout(() => { setOut(true); stop() }, SPLASH_MS + SPLASH_HOLD) // (the animation is finished at SPLASH_MS: the splash waits a moment, with the whole $? on screen, before it fades)
+    const t2 = setTimeout(() => doneRef.current && doneRef.current(), SPLASH_MS + SPLASH_HOLD + 550)
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); stop() }
+  }, [sound])
   return (
-    <div className={'splash' + (out ? ' out' : '')}>
-      <svg viewBox="0 0 240 240" aria-label="$?">
-        <path className={cls} pathLength="1" style={{ '--dur': '1.15s', '--delay': '0s' }}
-          d="M120 14c58 -1 106 46 106 106s-47 107 -107 106S13 178 14 119 60 15 120 14c20 0 38 5 52 13"
-          fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        <path className={cls} pathLength="1" style={{ '--dur': '.85s', '--delay': '1.2s' }}
-          d="M140 94c2-20 36-26 44-8 8 18-18 24-24 38" fill="none" stroke="#e5383b" strokeWidth="14" strokeLinecap="round" strokeLinejoin="round" />
-        {dot && <circle cx="158" cy="152" r="8" fill="#e5383b" />}
-        <path className={cls} pathLength="1" style={{ '--dur': '1.1s', '--delay': '2.05s' }}
-          d="M108 64c-18-8-38 2-38 18 0 20 40 22 40 44 0 16-22 24-42 14" fill="none" stroke="#1faa59" strokeWidth="13" strokeLinecap="round" strokeLinejoin="round" transform="translate(-4 4)" />
-        <path className={cls} pathLength="1" style={{ '--dur': '.5s', '--delay': '2.55s' }}
-          d="M88 50 82 180" fill="none" stroke="#1faa59" strokeWidth="13" strokeLinecap="round" />
-      </svg>
+    <div className={'splash full' + (go ? ' go' : '') + (out ? ' out' : '')} style={{ ...style, '--k': k || SPLASH_SLOW }}>
+      <Scene go={go} />
     </div>
   )
 }

@@ -73,6 +73,28 @@ export function levelFor(amount, code) {
   return Math.max(1, Math.round(n))
 }
 
+// Gulliver: the big rare things (rent, investments, gifts). a Gulliver county is on the map like any other, but what is spent in it
+// is not part of "this month", of Analytics' top spender, or of the accident odds. it has its own total.
+export const GULLIVER = 'Gulliver'
+export const isGulliver = (county) => !!county && county.group === GULLIVER
+
+// what was spent in one month and one currency: per county, the total of everything except Gulliver, and the Gulliver total
+export function monthSpending(expenses, counties, currency, ym) {
+  const group = new Map(counties.map((c) => [c.id, c.group]))
+  const per = {}
+  let total = 0
+  let gulliver = 0
+  for (const e of expenses) {
+    if (e.currency !== currency || ymOf(e.ts) !== ym) continue
+    const p = (per[e.countyId] ||= { spent: 0, count: 0 })
+    p.spent += e.amount
+    p.count += 1
+    if (group.get(e.countyId) === GULLIVER) gulliver += e.amount
+    else total += e.amount
+  }
+  return { per, total, gulliver }
+}
+
 // my share of a bill split between n people
 export const shareOf = (total, people) => Math.max(0.01, Math.round((total / Math.max(1, Math.round(people) || 1)) * 100) / 100)
 

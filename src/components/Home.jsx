@@ -3,7 +3,8 @@ import { CityScene } from '../CityScene.js'
 import Icon from './Icon.jsx'
 import { countyIcon } from './Editors.jsx'
 import { setState } from '../store.js'
-import { fmt, fmtNum, symbolOf, ymOf, levelFor } from '../util.js'
+import { fmt, fmtNum, symbolOf, ymOf, levelFor, monthSpending } from '../util.js'
+import { assessSpending } from '../cityRules.js'
 import { useCountUp, useDark } from '../hooks.js'
 import { haptic } from '../haptics.js'
 import { MAP_LIST } from '../maps.js'
@@ -15,6 +16,7 @@ const FILTERS = [
   { id: 'Media', label: 'Media', icon: 'film', color: '#8338ec' },
   { id: 'Shopping', label: 'Shopping', icon: 'cart', color: '#2a9d8f' },
   { id: 'Other', label: 'Other', icon: 'dots', color: '#6c757d' },
+  { id: 'Gulliver', label: 'Gulliver', icon: 'bank', color: '#c9a227' },
 ]
 
 const MODES = ['system', 'light', 'dark']
@@ -37,17 +39,10 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
   const cur = currencies.includes(s.currency) ? s.currency : currencies[0]
   const ym = ymOf(Date.now())
 
-  const { list, total } = useMemo(() => {
-    const per = {}
-    let t = 0
-    for (const e of s.expenses) {
-      if (e.currency !== cur || ymOf(e.ts) !== ym) continue
-      const p = (per[e.countyId] ||= { spent: 0, count: 0 })
-      p.spent += e.amount
-      p.count += 1
-      t += e.amount
-    }
-    return { list: s.counties.map((c) => ({ ...c, spent: per[c.id]?.spent || 0, count: per[c.id]?.count || 0, level: levelFor(per[c.id]?.spent || 0, cur) })), total: t }
+  // "this month" leaves out Gulliver (rent, investments, gifts), which has its own total
+  const { list, total, gulliver } = useMemo(() => {
+    const { per, total: t, gulliver: g } = monthSpending(s.expenses, s.counties, cur, ym)
+    return { list: s.counties.map((c) => ({ ...c, spent: per[c.id]?.spent || 0, count: per[c.id]?.count || 0, level: levelFor(per[c.id]?.spent || 0, cur) })), total: t, gulliver: g }
   }, [s.expenses, s.counties, cur, ym])
 
   const animTotal = useCountUp(total)
@@ -58,11 +53,23 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
       onViewChanged: (m) => setMoved(m),
     })
     scene.current = sc
+    if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) window.__scene = sc // lets a preview start a crash by hand
     if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_HOOK) window.__scene = sc // test hook, never in release builds
     return () => { sc.dispose(); scene.current = null }
   }, [])
 
-  useEffect(() => { scene.current?.setCounties(list) }, [list])
+  // where the money goes, judged over ten days: the only county where accidents and fights may happen
+  // (a preview link with ?fights skips the ten days of waiting: the county with the most spending counts as the top one, so a fight can be seen right away)
+  const demoFights = typeof location !== 'undefined' && new URLSearchParams(location.search).has('fights')
+  const assess = useMemo(() => {
+    if (!demoFights) return assessSpending(s.expenses, s.counties, cur)
+    const spent = new Map()
+    for (const e of s.expenses) if (e.currency === cur) spent.set(e.countyId, (spent.get(e.countyId) || 0) + e.amount)
+    let top = null, best = 0
+    for (const c of s.counties) { const v = c.group === 'Gulliver' ? 0 : spent.get(c.id) || 0; if (v > best) { best = v; top = c.id } }
+    return { ready: true, top }
+  }, [s.expenses, s.counties, cur, demoFights])
+  useEffect(() => { scene.current?.setCounties(list, assess) }, [list, assess])
   useEffect(() => { scene.current?.setMap(s.map) }, [s.map])
   useEffect(() => { scene.current?.setDark(dark) }, [dark])
   useEffect(() => { scene.current?.select(sel) }, [sel])
@@ -101,7 +108,8 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
           {symbolOf(cur)}{fmtNum(Math.round(animTotal * 100) / 100, cur)}
           {currencies.length > 1 && <span className="cur-chip">{cur} ⇄</span>}
         </div>
-        <div className="filters">
+        {gulliver > 0 && filter !== 'Gulliver' && <div className="muted" style={{ fontSize: 14.4, fontWeight: 600, marginTop: 2 }}>+ Gulliver {fmt(gulliver, cur)}</div>}
+        <div className={'filters' + (filters.length > 6 ? ' many' : '')}>
           {filters.map((f) => (
             <button key={f.label} className={'filt' + (filter === f.id ? ' on' : '')} onClick={() => { setSel(null); setFilter(f.id) }}>
               <span className="ring"><Icon name={f.icon} size={22} color={f.color} /></span>
@@ -125,7 +133,7 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
             </div>
             <div className="map-row">
               {MAP_LIST.map((m) => (
-                <button key={m.id} className={'map-card' + (m.id === mapMeta.id ? ' on' : '')} onClick={() => { setSel(null); setState((st) => ({ ...st, map: m.id })); setMapOpen(false) }}>
+                <button key={m.id} className={'map-card' + (m.id === mapMeta.id ? ' on' : '')} onClick={() => { setState((st) => ({ ...st, map: m.id })); setMapOpen(false) }}>
                   <span className="map-thumb" style={{ background: `linear-gradient(180deg, ${m.sky[0]}, ${m.sky[1]})` }}>
                     <i className="g" style={{ background: m.ground }} />
                     <i className="r" style={{ background: m.road }} />
@@ -180,7 +188,7 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
                     <span className="ico-circle" style={{ width: 32, height: 32, background: c.color + '26', color: c.color }}><Icon name={countyIcon(c)} size={17} /></span>
                     <span className="sp">{c.name}</span>
                     <span>{fmt(c.spent, cur)}</span>
-                    <span className="pc">{total ? Math.round((c.spent / total) * 100) : 0}%</span>
+                    <span className="pc">{(c.group === 'Gulliver' ? gulliver : total) ? Math.round((c.spent / (c.group === 'Gulliver' ? gulliver : total)) * 100) : 0}%</span>
                   </div>
                 ))}
               </div>

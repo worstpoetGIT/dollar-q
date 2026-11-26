@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import 'lenis/dist/lenis.css'
 import Splash from './components/Splash.jsx'
+import SplashTester from './components/SplashTester.jsx'
 import Icon from './components/Icon.jsx'
+import Toast from './components/Toast.jsx'
 import Home from './components/Home.jsx'
 import Analytics from './components/Analytics.jsx'
 import History from './components/History.jsx'
@@ -14,14 +16,23 @@ import * as store from './store.js'
 import { useStore, setState, runFixed, ready } from './store.js'
 import { startSync, useSyncStatus } from './sync/service.js'
 import { fmt } from './util.js'
+import { setAppIcon } from './appIcon.js'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar } from '@capacitor/status-bar'
 
 const TABS = [['home', 'city', 'State'], ['analytics', 'chart', 'Analytics'], null, ['history', 'receipt', 'History'], ['profile', 'user', 'Profile']]
 
 export default function App() {
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('splashes')) return <SplashTester />
+  return <MainApp />
+}
+
+function MainApp() {
   const s = useStore()
   const [splash, setSplash] = useState(!new URLSearchParams(location.search).has('nosplash'))
+  // the icon on the home screen follows the map: it changes when the map is changed (not when the app opens, which would show the phone's "icon changed" message each time)
+  const lastMap = useRef(s.map)
+  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city') } }, [s.map])
   const [tab, setTab] = useState('home')
   const [sub, setSub] = useState(null)
   const [adding, setAdding] = useState(null)
@@ -77,7 +88,6 @@ export default function App() {
       setSaved({ n: Date.now(), countyId: e.countyId, amount: e.amount, currency: e.currency })
       setTab('home')
     }
-    setTimeout(() => setToast(null), 3100)
   }, [s.counties])
 
   const go = (t) => { setSub(null); setTab(t) }
@@ -109,14 +119,9 @@ export default function App() {
           {screen === 'wizard' && <Wizard s={s} onBack={() => setEditName(true)} onDone={() => setState((st) => ({ ...st, setupDone: true }))} />}
         </>
       )}
-      {toast && (
-        <div className="toast" key={toast.n}>
-          <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--green)', display: 'grid', placeItems: 'center', flex: 'none' }}><Icon name="check" size={16} color="#fff" sw={3} /></span>
-          <div><div style={{ fontSize: 14.4, opacity: 0.7 }}>{toast.sub}</div><b>{toast.text}</b></div>
-        </div>
-      )}
+      {toast && <Toast key={toast.n} toast={toast} onGone={() => setToast((x) => (x && x.n === toast.n ? null : x))} />}
       {screen === 'email' && <SignIn onSkip={skipSignIn} />}
-      {splash && <Splash onDone={() => setSplash(false)} />}
+      {splash && <Splash map={s.map || 'city'} onDone={() => setSplash(false)} />}
     </div>
   )
 }

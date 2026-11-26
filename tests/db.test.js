@@ -169,8 +169,8 @@ describe('keeping the database in step with the state', () => {
     const added = { ...s.expenses[0], id: 'new' }
     await saveDiff(db, s, { ...s, expenses: [...s.expenses, added] })
     expect((await loadState(db, base())).expenses.length).toBe(20001)
-    expect(Date.now() - t0).toBeLessThan(8000)
-  })
+    expect(Date.now() - t0).toBeLessThan(15000) // a quiet machine takes about 2 seconds, this only catches something badly wrong
+  }, 30000)
 })
 
 describe('meta', () => {
