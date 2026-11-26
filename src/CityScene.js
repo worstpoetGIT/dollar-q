@@ -1574,43 +1574,107 @@ export class CityScene {
   // ---- changing the map only changes the look ----
   // what is going on in the city, so that it can go on in the new look: where everybody is, which way they go, the lights
   snapshotLife() {
-    if (this.accident) this.accidentAbort(this.accident) // (an accident in the middle of it is called off, it comes again: it does not count)
-    for (const c of this.cars) if (c.special) c.park = null // (the ambulance and the police drive on)
     const WALKER = ['active', 'axis', 'side', 'road', 'dir', 't', 'lat', 'lane', 'alt', 'goal', 'speed', 'base', 'crossing', 'inPlaza', 'waiting', 'still', 'blocked', 'away', 'watch', 'leaving', 'down', 'face', 'ph']
     const CAR = ['active', 'axis', 'road', 'lane', 'alt', 'lat', 'goal', 'dir', 't', 'speed', 'base', 'still', 'turn', 'arc', 'waitMerge', 'yaw', 'stuck', 'backed', 'hwe', 'rerouted', 'park', 'freeSlide']
     const take = (o, keys) => { const r = {}; for (const k of keys) if (o[k] !== undefined) r[k] = o[k]; return r }
+    const iC = (c) => (c ? this.cars.indexOf(c) : -1), iW = (w) => (w ? this.walkers.indexOf(w) : -1)
+    const A = this.accident
+    const key = A ? new Set([A.car, A.amb && A.amb.car, A.pol && A.pol.car]) : new Set()
+    let accident = null
+    if (A) { // an accident in the middle of it goes on in the new look: everybody and everything of it is written down, and put back after
+      const { car, vic, amb, pol, watchers, actors, driver, officer, medics, ...rest } = A
+      accident = {
+        rest, car: iC(car), vic: iW(vic),
+        amb: amb && { ...amb, car: iC(amb.car) }, pol: pol && { ...pol, car: iC(pol.car) },
+        watchers: (watchers || []).map((o) => ({ ...o, w: iW(o.w) })),
+        actors: (actors || []).map((a) => ({ kind: a.kind, x: a.x, z: a.z, yaw: a.yaw, ph: a.ph, moving: a.moving, k: a.k, hidden: a.hidden, manual: a.manual, dst: a.dst, pause: a.pause, pts: a.pts.map((q) => [...q]) })),
+        refs: { driver: (actors || []).indexOf(driver), officer: (actors || []).indexOf(officer), medics: medics ? medics.map((m) => actors.indexOf(m)) : null },
+      }
+    }
     return {
       sig: { ...this.traffic.sig, hold: null },
       walkers: this.walkers.map((w) => take(w, WALKER)),
-      cars: this.cars.filter((c) => c.active && !c.crash && !c.passing).map((c) => ({ special: c.special, hl: c.hl, hw: c.hw, state: take(c, CAR) })),
+      cars: this.cars.map((c, i) => (c.active ? { idx: i, must: key.has(c), special: c.special, hl: c.hl, hw: c.hw, state: take(c, CAR), crash: c.crash ? { ...c.crash, other: iW(c.crash.other) } : null, passing: iC(c.passing) } : null)).filter(Boolean),
+      accident,
+      restoring: this.restoring.map(iW),
       E: this.E,
     }
   }
 
   restoreLife(life) {
-    if (life.E !== this.E) { Object.assign(this.traffic.sig, life.sig); return } // (the city grew or shrank: the old places do not fit, everybody starts again)
     Object.assign(this.traffic.sig, life.sig)
+    if (life.E !== this.E) { // the city grew or shrank: the old places do not fit, everybody starts again (and an accident is called off)
+      if (life.accident && life.accident.rest.before) { this.lastAcc = life.accident.rest.before.acc; this.lastDemo = life.accident.rest.before.demo }
+      return
+    }
     life.walkers.forEach((st, i) => { const w = this.walkers[i]; if (w) { Object.assign(w, st); w.passing = null } })
     const free = this.cars.filter((c) => !c.active)
     const placed = []
+    const into = new Map() // which new vehicle each old one went into
     const clash = (a, b) => { // would these two overlap (on the same road, or both in the crossroad)?
       if (a.road === b.road) return Math.abs(a.lat - b.lat) < a.hw + b.hw + 0.25 && Math.abs(a.t - b.t) < a.hl + b.hl + 0.5
       return Math.abs(a.t) < 3.2 && Math.abs(b.t) < 3.2
     }
-    // each vehicle goes into the one of about the same size in the new look (a different size is fine when it fits where it is), and is gone if it does not fit
-    for (const v of life.cars.slice().sort((p, q) => Math.abs(p.state.t) - Math.abs(q.state.t))) {
+    // each vehicle goes into the one of about the same size in the new look (a different size is fine when it fits where it is), and is gone if it does not fit.
+    // the ones that belong to an accident go first
+    const order = life.cars.slice().sort((p, q) => (q.must ? 1 : 0) - (p.must ? 1 : 0) || Math.abs(p.state.t) - Math.abs(q.state.t))
+    for (const v of order) {
       const d = (c) => Math.abs(c.hl - v.hl) + 2 * Math.abs(c.hw - v.hw)
       const same = (c) => (v.special ? c.special === v.special : !c.special)
-      const ok = free.filter((c) => same(c) && (v.state.arc ? d(c) < 0.25 : d(c) < 1.2)).sort((p, q) => d(p) - d(q))
+      const fits = (c) => (v.must && !v.special ? true : v.must || v.state.arc ? d(c) < 0.25 : d(c) < 1.2) // (the car that hit somebody goes into the closest one whatever its size: the accident goes on)
+      const ok = free.filter((c) => same(c) && fits(c)).sort((p, q) => d(p) - d(q))
       for (const c of ok) {
-        const st = { ...v.state, crash: null, passing: null }
-        const probe = { road: st.road, lat: st.lat, t: st.t, hl: c.hl, hw: c.hw }
-        if (placed.some((o) => clash(probe, o))) continue
+        const probe = { road: v.state.road, lat: v.state.lat, t: v.state.t, hl: c.hl, hw: c.hw }
+        if (!v.must && placed.some((o) => clash(probe, o))) continue
         free.splice(free.indexOf(c), 1)
-        Object.assign(c, st)
+        Object.assign(c, v.state, { crash: null, passing: null })
+        if (v.must && !v.special && v.crash && v.crash.hit && life.accident) { // (a different size: its nose stays where it touched the person)
+          const vic = this.walkers[life.accident.vic]
+          if (vic) c.t = vic.t - c.dir * (vic.hl + 0.05 + c.hl)
+        }
         placed.push(probe)
+        into.set(v.idx, c)
         break
       }
+    }
+    for (const v of life.cars) { // what refers to what (who a car is overtaking, who the car that hit somebody hit)
+      const c = into.get(v.idx)
+      if (!c) continue
+      if (v.crash) c.crash = { ...v.crash, other: this.walkers[v.crash.other] }
+      if (v.passing >= 0) { c.passing = into.get(v.passing) || null; if (!c.passing) { c.goal = c.lane; c.waitMerge = false } }
+    }
+    this.restoring = life.restoring.map((i) => this.walkers[i]).filter(Boolean)
+
+    const a = life.accident
+    if (!a) return
+    const car = into.get(a.car) || (a.rest.carFree ? this.cars.find((c) => !c.special && !c.active) : null), vic = this.walkers[a.vic] // (a car that has already driven off is still part of it)
+    const pool = (kind) => this.cars.find((c) => c.kind === kind) // (an ambulance or police car that has just driven off, or is just about to, is not on the street at this moment, but it is still part of it: it has its own place in the pool)
+    const amb = a.amb && (into.get(a.amb.car) || pool('ambulance')), pol = a.pol && (into.get(a.pol.car) || pool('police'))
+    if (!car || !vic || (a.amb && !amb) || (a.pol && !pol)) { // something of it has no place in the new look: it is called off (it comes again, and does not count)
+      if (a.rest.before) { this.lastAcc = a.rest.before.acc; this.lastDemo = a.rest.before.demo }
+      if (car) car.crash = null
+      for (const e of [amb, pol]) if (e) e.park = null
+      if (vic) { vic.down = false; if (!vic.active) vic.away = 1.5 }
+      for (const o of a.watchers) { const w = this.walkers[o.w]; if (w && o.sent && w.active && w.watch) releaseWatcher(w, this.traffic.lots) }
+      return
+    }
+    // the car that hit somebody may be longer or shorter in the new look: what stands behind it (the police car, the driver and the officer) moves with its back end
+    const was = life.cars.find((v) => v.idx === a.car)
+    const shift = was && car && a.rest.phase === 'scene' && !a.rest.carFree ? -a.rest.dir * 2 * (car.hl - was.hl) : 0
+    const mv = (q) => (a.rest.axis === 'x' ? [q[0] + shift, q[1]] : [q[0], q[1] + shift])
+    if (shift && pol && a.pol.stage !== 'gone') { if (pol.park && pol.park.at) pol.t += shift; if (pol.park) pol.park = { ...pol.park, t: pol.park.t + shift }; a.pol.spot += shift } // (one that is still on its way only gets a new place to stop)
+    const actors = a.actors.map((sa) => { // the people of the accident are made again, in the same places, doing the same
+      const [nx, nz] = shift && (sa.kind === 'driver' || sa.kind === 'officer') ? mv([sa.x, sa.z]) : [sa.x, sa.z]
+      const n = this.makeActor(sa.kind, nx, nz, sa.yaw)
+      Object.assign(n, { ph: sa.ph, moving: sa.moving, k: sa.k, hidden: sa.hidden, manual: sa.manual, dst: sa.dst, pause: sa.pause, pts: shift && (sa.kind === 'driver' || sa.kind === 'officer') ? sa.pts.map(mv) : sa.pts })
+      return n
+    })
+    const at = (i) => (i >= 0 ? actors[i] : undefined)
+    vic.p.rotation.order = 'YXZ'
+    this.accident = {
+      ...a.rest, car, vic, amb: a.amb && { ...a.amb, car: amb }, pol: a.pol && { ...a.pol, car: pol },
+      watchers: a.watchers.map((o) => ({ ...o, w: this.walkers[o.w] })).filter((o) => o.w),
+      actors, driver: at(a.refs.driver), officer: at(a.refs.officer), medics: a.refs.medics ? a.refs.medics.map(at) : undefined,
     }
   }
 
