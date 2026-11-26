@@ -2,6 +2,8 @@
 // it plays once and nothing else in the app makes a sound. the recording is exactly as long as the splash, so it starts with it and ends with it; if a recording is shorter, it is timed to END when the splash ends (the splash tells how long it lasts).
 import cutUrl from './assets/scissors-cut.wav?url'
 
+export const SOUND_VOLUME = 0.7 // the loudness of the splash sound: 70 % of the recording
+
 let ctx = null
 let recording = null // the decoded recording once it has loaded (false when it could not be)
 let loading = null
@@ -44,7 +46,7 @@ export function preloadSound() {
 export const cutStart = (endsAt, length, elapsed = 0) => Math.max(0, endsAt - length - elapsed)
 
 // play the cut once, so that it ends "endsAt" seconds from now (the end of the splash; 0 or less: right away). returns a function that stops it. quietly does nothing where audio is not allowed.
-export function startSound({ volume = 1, endsAt = 0 } = {}) {
+export function startSound({ volume = SOUND_VOLUME, endsAt = 0 } = {}) {
   try {
     const c = audioContext()
     if (!c) return () => {}
