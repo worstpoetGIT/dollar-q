@@ -374,26 +374,41 @@ export const deleteExpense = (id) => setState((s) => ({ ...s, expenses: s.expens
 export function runFixed() {
   const now = new Date()
   const ym = ymOf(now.getTime())
-  const due = []
+  const due = [] // { f, m: the month, day }
   for (const f of state.fixed) {
     if (f.lastPosted === ym) continue
-    const day = Math.min(f.day, daysIn(ym))
-    if (now.getDate() >= day) due.push({ f, day })
+    // the months the app was not opened in are logged too (up to a year back): the subscription was charged all the same
+    const months = []
+    if (f.lastPosted && f.lastPosted < ym) {
+      let m = shiftYm(f.lastPosted, 1)
+      while (m < ym) months.push(m), (m = shiftYm(m, 1))
+    }
+    months.splice(0, Math.max(0, months.length - 12))
+    months.push(ym)
+    for (const m of months) {
+      const day = Math.min(f.day, daysIn(m))
+      if (m < ym || now.getDate() >= day) due.push({ f, m, day })
+    }
   }
   if (!due.length) return
   setState((s) => {
     const exps = [...s.expenses]
+    const have = new Set(exps.map((e) => e.id))
     const fixed = s.fixed.map((f) => {
-      const d = due.find((x) => x.f.id === f.id)
-      if (!d) return f
+      const mine = due.filter((x) => x.f.id === f.id)
+      if (!mine.length) return f
       const acc = s.accounts.find((a) => a.id === f.accountId) || s.accounts[0]
-      exps.push({
-        id: 'fx-' + f.id + '-' + ym, // the same on every phone, so two phones posting the same month do not make two expenses
-        countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
-        methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
-        note: f.name, ts: new Date(now.getFullYear(), now.getMonth(), d.day, 9).getTime(), fixedId: f.id,
-      })
-      return { ...f, lastPosted: ym }
+      for (const d of mine) {
+        const id = 'fx-' + f.id + '-' + d.m // the same on every phone, so two phones posting the same month do not make two expenses
+        if (have.has(id)) continue
+        have.add(id)
+        exps.push({
+          id, countyId: f.countyId, amount: f.amount, total: f.amount, accountId: acc.id, currency: acc.currency,
+          methodType: f.methodType || 'bank', methodName: f.methodName || '', people: 1,
+          note: f.name, ts: new Date(Number(d.m.slice(0, 4)), Number(d.m.slice(5)) - 1, d.day, 9).getTime(), fixedId: f.id,
+        })
+      }
+      return { ...f, lastPosted: mine[mine.length - 1].m }
     })
     return { ...s, expenses: exps, fixed }
   })

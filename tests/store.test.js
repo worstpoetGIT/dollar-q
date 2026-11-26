@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { addExpense, updateExpense, deleteExpense, getState, resetAll } from '../src/store.js'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { addExpense, updateExpense, deleteExpense, getState, resetAll, setState, runFixed } from '../src/store.js'
 
 beforeEach(() => {
   resetAll()
@@ -70,5 +70,49 @@ describe('History is kept apart per account', () => {
     expect(byAccount(e, 'a1').map((x) => x.id)).toEqual(['1', '3'])
     expect(byAccount(e, 'a2').map((x) => x.id)).toEqual(['2'])
     expect(byAccount(e, 'none')).toEqual([])
+  })
+})
+
+describe('fixed expenses and subscriptions', () => {
+  afterEach(() => vi.useRealTimers())
+  const setup = (fixed) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 10, 26, 12, 0, 0)) // 26 November 2026
+    resetAll()
+    const a = getState().accounts[0]
+    setState((s) => ({ ...s, fixed: fixed.map((f, i) => ({ id: 'f' + i, name: 'Sub ' + i, amount: 100, accountId: a.id, countyId: s.counties[0].id, methodType: 'bank', methodName: '', ...f })) }))
+  }
+  const posted = () => getState().expenses.filter((e) => e.fixedId).map((e) => e.id + '@' + new Date(e.ts).toISOString().slice(0, 10)).sort()
+
+  it('logs this month once the day has come, and not twice', () => {
+    setup([{ day: 5, lastPosted: null }, { day: 28, lastPosted: null }])
+    runFixed(); runFixed()
+    expect(getState().expenses.filter((e) => e.fixedId === 'f0')).toHaveLength(1)
+    expect(getState().expenses.filter((e) => e.fixedId === 'f1')).toHaveLength(0) // the 28th has not come yet
+  })
+
+  it('logs the months the app was not opened in as well, each on its own day', () => {
+    setup([{ day: 5, lastPosted: '2026-08' }])
+    runFixed()
+    expect(posted()).toEqual(['fx-f0-2026-09@2026-09-05', 'fx-f0-2026-10@2026-10-05', 'fx-f0-2026-11@2026-11-05'])
+    expect(getState().fixed[0].lastPosted).toBe('2026-11')
+  })
+
+  it('a day that does not exist in a short month is the last day of it', () => {
+    setup([{ day: 31, lastPosted: '2026-08' }])
+    runFixed()
+    expect(posted()).toEqual(['fx-f0-2026-09@2026-09-30', 'fx-f0-2026-10@2026-10-31']) // (30 September, 31 October; November waits for the 30th)
+    expect(getState().fixed[0].lastPosted).toBe('2026-10')
+    vi.setSystemTime(new Date(2026, 10, 30, 12, 0, 0))
+    runFixed()
+    expect(posted().at(-1)).toBe('fx-f0-2026-11@2026-11-30')
+  })
+
+  it('never logs more than a year back, and never makes the same expense twice', () => {
+    setup([{ day: 1, lastPosted: '2019-01' }])
+    runFixed()
+    expect(posted()).toHaveLength(13)
+    runFixed()
+    expect(posted()).toHaveLength(13)
   })
 })
