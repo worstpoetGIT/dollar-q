@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pencilPlan, startPencil, passesFor } from '../src/pencil.js'
+import { startSound, CUT_AT, soundStatus } from '../src/splashSound.js'
 import { SPLASHES, SPLASH_IDS, SPLASH_MS, splashFor } from '../src/splashes.jsx'
 import { MAP_LIST } from '../src/maps.js'
 
@@ -18,36 +18,15 @@ describe('opening splashes', () => {
     expect(splashFor(undefined)).toBe(SPLASHES.city)
   })
 
-  it('the pencil strokes fill the splash from start to finish, one after another, never overlapping', () => {
-    const secs = (SPLASH_MS - 150) / 1000
-    for (let seed = 1; seed <= 20; seed++) {
-      let a = seed * 7919
-      const rnd = () => { a = (a * 16807) % 2147483647; return a / 2147483647 }
-      const plan = pencilPlan(secs, rnd)
-      expect(plan.length).toBeGreaterThan(4)
-      expect(plan[0].at).toBeLessThan(0.2)
-      let end = 0
-      for (const s of plan) {
-        expect(s.at).toBeGreaterThanOrEqual(end)
-        expect(s.dur).toBeGreaterThan(0)
-        expect(s.at + s.dur).toBeLessThanOrEqual(secs + 1e-9)
-        end = s.at + s.dur
-      }
-      expect(end).toBeGreaterThan(secs - 0.8) // (it is still scratching near the end)
-    }
-  })
-
-  it('the recording of the pencil plays once from the start, at its own speed, and covers the splash', () => {
-    const secs = (SPLASH_MS - 150) / 1000
-    const passes = passesFor(secs)
-    expect(passes).toHaveLength(1)
-    expect(passes[0]).toMatchObject({ at: 0, rate: 1 })
-    expect(passesFor(9).length).toBeGreaterThan(1) // (a longer splash would get it again)
+  it('the one scissor cut lands near the start of the splash and well before it ends', () => {
+    expect(CUT_AT).toBeGreaterThanOrEqual(0)
+    expect(CUT_AT).toBeLessThan(SPLASH_MS / 1000 / 2)
   })
 
   it('without audio support the sound does nothing and does not throw', () => {
-    const stop = startPencil(3)
+    const stop = startSound()
     expect(typeof stop).toBe('function')
     expect(() => stop()).not.toThrow()
+    expect(soundStatus().audio).toBe(false)
   })
 })

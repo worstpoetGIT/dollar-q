@@ -1,0 +1,3 @@
+scissors-cut.wav: one cut of a pair of scissors through paper, about 1 second, the sound under the opening splashes.
+It is made from the owner's own file (paper-cut-into-shapes-with-scissors-tomas-herudek-1-00-16.mp3): the single cut at 4.05 s to 5.05 s of it, made as loud as possible without clipping, with a very short fade at both ends.
+Licence of the original: provided by the app's owner; the source site and its licence were not recorded (the file name names "Tomas Herudek"). Check before publishing a release.

@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { splashFor, SPLASH_MS, SPLASH_SLOW } from '../splashes.jsx'
-import { startPencil, preloadPencil } from '../pencil.js'
+import { startSound, preloadSound } from '../splashSound.js'
 
-preloadPencil() // (the recording is fetched as soon as the app loads)
+preloadSound() // (the recording is fetched as soon as the app loads)
 
-// the opening splash of the map in use: the $ and ? drawn in that map's way, with the sound of a pencil on paper until it is done
+// the opening splash of the map in use: the $ and ? drawn in that map's way, with the sound of one cut of scissors through paper
 export default function Splash({ map = 'city', onDone, sound = true }) {
   const [go, setGo] = useState(false)
   const [out, setOut] = useState(false)
   const { Scene, style } = splashFor(map)
   useEffect(() => {
     const t0 = setTimeout(() => setGo(true), 150)
-    const stop = sound ? startPencil((SPLASH_MS - 150) / 1000) : () => {}
+    const stop = sound ? startSound() : () => {}
     const t1 = setTimeout(() => { setOut(true); stop() }, SPLASH_MS)
     const t2 = setTimeout(() => onDone && onDone(), SPLASH_MS + 550)
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); stop() }
