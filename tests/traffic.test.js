@@ -631,7 +631,7 @@ describe('traffic: the ambulance has priority, the police do not, and people wal
       const r = run(seed, 'ambulance')
       expect(r.started).toBe(true)
       expect(r.bad).toBe(0)
-      expect(r.waited).toBeLessThan(7) // (a green for its road comes after the yellow and the red the others get)
+      expect(r.waited).toBeLessThan(2) // (it does not wait for the green: it goes through, giving way only to whoever is on the crossroad)
     }
   }, 60000)
 
@@ -710,6 +710,35 @@ describe('traffic: people go round the lamp posts', () => {
       expect(worst).toBeLessThan(8) // at worst they wait a moment for somebody coming the other way
     }
     setObstacles([])
+  }, 60000)
+})
+
+describe('traffic: an ambulance goes past the queue', () => {
+  it('stuck behind crawling cars it overtakes them in the other lane and gets to its place, with oncoming traffic, and nobody overlaps', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const rng = seeded(seed)
+      const cars = fleet('city')
+      const tr = makeTraffic()
+      const walkers = placeWalkers(8, rng)
+      const amb = cars[cars.length - 1]
+      amb.hl = 0.885; amb.hw = 0.4
+      for (let i = 0; i < 3; i++) Object.assign(cars[i], { active: true, axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t: -4.6 - i * 2.4, base: 0.05, speed: 0, passing: null, still: 0, turn: 'straight' })
+      expect(dispatchCar(amb, cars, 'x', 0.75, 10, 'ambulance')).toBe(true)
+      let spawnIn = 1, bad = 0, reached = null, maxOut = 0
+      for (let i = 0; i < 60 * 30 && reached === null; i++) {
+        spawnIn -= 1 / 30
+        if (spawnIn <= 0) { spawnIn = 2 + rng() * 2; const c = cars.slice(3, 8).find((x) => !x.active); if (c) Object.assign(c, { active: true, axis: 'x', road: 'x', lane: -0.75, alt: 0.75, lat: -0.75, goal: -0.75, dir: -1, t: 16, base: 2.6, speed: 2.6, passing: null, still: 0, turn: 'straight' }) }
+        stepTraffic(cars, walkers, tr, 1 / 30)
+        maxOut = Math.max(maxOut, Math.abs(amb.lat - amb.lane))
+        const all = [...cars.filter((c) => c.active), ...walkers.filter((w) => w.active)]
+        for (let a = 0; a < all.length; a++) for (let b = a + 1; b < all.length; b++) if (overlap(rectOf(all[a]), rectOf(all[b]))) bad++
+        if (amb.park && amb.park.at) reached = i / 30
+      }
+      expect(reached).not.toBeNull()
+      expect(reached).toBeLessThan(14) // not held up by the queue
+      expect(maxOut).toBeGreaterThan(1) // it really went round them
+      expect(bad).toBe(0)
+    }
   }, 60000)
 })
 

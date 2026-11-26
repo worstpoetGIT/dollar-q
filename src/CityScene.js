@@ -1114,6 +1114,10 @@ export class CityScene {
     if (A.before) { this.lastAcc = A.before.acc; this.lastDemo = A.before.demo }
     endCrash(A.car)
     A.vic.down = false; A.vic.hitBy = null; A.vic.p.rotation.set(0, 0, 0)
+    if (!A.vic.active) A.vic.away = 1.5 // (they were already in the ambulance: they walk back on to the street)
+    for (const o of A.watchers || []) if (o.sent && o.w.active && o.w.watch) releaseWatcher(o.w, this.traffic.lots) // (the onlookers go on their way)
+    for (const e of [A.amb, A.pol]) if (e) e.car.park = null
+    for (const a of A.actors || []) this.disposePart(a.p)
     this.accident = null
   }
 
@@ -1567,6 +1571,49 @@ export class CityScene {
   }
 
 
+  // ---- changing the map only changes the look ----
+  // what is going on in the city, so that it can go on in the new look: where everybody is, which way they go, the lights
+  snapshotLife() {
+    if (this.accident) this.accidentAbort(this.accident) // (an accident in the middle of it is called off, it comes again: it does not count)
+    for (const c of this.cars) if (c.special) c.park = null // (the ambulance and the police drive on)
+    const WALKER = ['active', 'axis', 'side', 'road', 'dir', 't', 'lat', 'lane', 'alt', 'goal', 'speed', 'base', 'crossing', 'inPlaza', 'waiting', 'still', 'blocked', 'away', 'watch', 'leaving', 'down', 'face', 'ph']
+    const CAR = ['active', 'axis', 'road', 'lane', 'alt', 'lat', 'goal', 'dir', 't', 'speed', 'base', 'still', 'turn', 'arc', 'waitMerge', 'yaw', 'stuck', 'backed', 'hwe', 'rerouted', 'park', 'freeSlide']
+    const take = (o, keys) => { const r = {}; for (const k of keys) if (o[k] !== undefined) r[k] = o[k]; return r }
+    return {
+      sig: { ...this.traffic.sig, hold: null },
+      walkers: this.walkers.map((w) => take(w, WALKER)),
+      cars: this.cars.filter((c) => c.active && !c.crash && !c.passing).map((c) => ({ special: c.special, hl: c.hl, hw: c.hw, state: take(c, CAR) })),
+      E: this.E,
+    }
+  }
+
+  restoreLife(life) {
+    if (life.E !== this.E) { Object.assign(this.traffic.sig, life.sig); return } // (the city grew or shrank: the old places do not fit, everybody starts again)
+    Object.assign(this.traffic.sig, life.sig)
+    life.walkers.forEach((st, i) => { const w = this.walkers[i]; if (w) { Object.assign(w, st); w.passing = null } })
+    const free = this.cars.filter((c) => !c.active)
+    const placed = []
+    const clash = (a, b) => { // would these two overlap (on the same road, or both in the crossroad)?
+      if (a.road === b.road) return Math.abs(a.lat - b.lat) < a.hw + b.hw + 0.25 && Math.abs(a.t - b.t) < a.hl + b.hl + 0.5
+      return Math.abs(a.t) < 3.2 && Math.abs(b.t) < 3.2
+    }
+    // each vehicle goes into the one of about the same size in the new look (a different size is fine when it fits where it is), and is gone if it does not fit
+    for (const v of life.cars.slice().sort((p, q) => Math.abs(p.state.t) - Math.abs(q.state.t))) {
+      const d = (c) => Math.abs(c.hl - v.hl) + 2 * Math.abs(c.hw - v.hw)
+      const same = (c) => (v.special ? c.special === v.special : !c.special)
+      const ok = free.filter((c) => same(c) && (v.state.arc ? d(c) < 0.25 : d(c) < 1.2)).sort((p, q) => d(p) - d(q))
+      for (const c of ok) {
+        const st = { ...v.state, crash: null, passing: null }
+        const probe = { road: st.road, lat: st.lat, t: st.t, hl: c.hl, hw: c.hw }
+        if (placed.some((o) => clash(probe, o))) continue
+        free.splice(free.indexOf(c), 1)
+        Object.assign(c, st)
+        placed.push(probe)
+        break
+      }
+    }
+  }
+
   // how see-through a vehicle is (1: solid), the same way as for people
   fadeCar(c, k) {
     if (k >= 1 && !c.faded) return
@@ -1616,7 +1663,7 @@ export class CityScene {
     })
   }
 
-  buildCars() {
+  buildCars(carried = false) {
     // pool of vehicles, a few cross the roads at a time
     this.cars = this.T.vehicles().map((car) => {
       car.visible = false
@@ -1633,7 +1680,7 @@ export class CityScene {
       this.cars.push(Object.assign(newCar(hl, hw), { car, kind, ph: 0, special: kind }))
     }
     this.spawnIn = 0.4
-    for (let i = 0; i < 3; i++) this.spawnVehicle(true)
+    if (!carried) for (let i = 0; i < 3; i++) this.spawnVehicle(true)
   }
 
   spawnVehicle(anywhere = false, prefer = null) {
@@ -1676,6 +1723,7 @@ export class CityScene {
     if (!MAPS[name]) name = 'city'
     const key = name === 'wire' && !this.dark ? 'wireLight' : name
     if (!force && this.mapKey === key && this.world) return
+    const life = this.world ? this.snapshotLife() : null // (only the look changes: the people, the vehicles and the lights carry on where they were)
     this.map = name
     this.mapKey = key
     const T = (this.T = MAPS[key])
@@ -1708,7 +1756,8 @@ export class CityScene {
     this.mats = { grass: M(C.grass), pad: M(C.pad), round: M(C.round), pine: M(C.pine), blossom: M(C.blossom), water: M(C.water) }
     this.buildWorld()
     this.buildWalkers()
-    this.buildCars()
+    this.buildCars(!!life)
+    if (life) this.restoreLife(life)
     const shadowCam = this.sun.shadow.camera // the shadows have to cover the whole board
     const grow = this.E / 15
     shadowCam.left = -24 * grow; shadowCam.right = 24 * grow; shadowCam.top = 24 * grow; shadowCam.bottom = -24 * grow
@@ -1730,6 +1779,7 @@ export class CityScene {
     }
     this.applyTheme()
     if (this.lastList) this.setCounties(this.lastList)
+    if (this.selected) this.select(this.selected, false) // (the county that was picked stays picked, and the camera stays where it is)
     this.start()
   }
 

@@ -236,8 +236,10 @@ function passPlan(m, movers, cfg) {
     } else {
       if (inAlt && p(o) + o.hl > start - 1 && p(o) - o.hl < end + 1) return null
       const inHome = Math.abs(o.lat - m.lane) < near + (o.hwe || o.hw)
-      if (inHome && p(o) > p(lead) && (o.crash || o.speed < 0.5) && p(o) - o.hl < p(m) + 22) return null // a queue or a wreck stands in my lane up ahead: passing would only leave me stuck out in the other lane
-      if (inHome && p(o) > p(lead) && p(o) - o.hl - (p(lead) + lead.hl) < 2 * m.hl + 2 * cfg.clear) return null // no room to pull back in
+      if (m.special !== 'ambulance') { // (an ambulance goes past the whole queue, one after the other)
+        if (inHome && p(o) > p(lead) && (o.crash || o.speed < 0.5) && p(o) - o.hl < p(m) + 22) return null // a queue or a wreck stands in my lane up ahead: passing would only leave me stuck out in the other lane
+        if (inHome && p(o) > p(lead) && p(o) - o.hl - (p(lead) + lead.hl) < 2 * m.hl + 2 * cfg.clear) return null // no room to pull back in
+      }
     }
   }
   return { lead, start, end }
@@ -269,6 +271,8 @@ function updatePass(m, movers, cfg, canStart) {
     const behind = p(lead) - lead.hl - (p(m) + m.hl) > cfg.clear
     if (!lead.active || ahead || behind) {
       m.passing = null
+      const next = m.special === 'ambulance' ? passPlan(m, movers, cfg) : null // the next one in the queue: an ambulance stays out and goes on past it
+      if (next) { m.passing = next.lead; return }
       if (roomToMerge(m, movers, cfg)) m.goal = m.lane
       else m.waitMerge = true
     }
@@ -637,10 +641,11 @@ function stepCar(c, cars, walkers, tr, dt) {
   if (c.stuck > 1.5 && tryUTurn(c, cars, walkers, tr.sig, dt)) return
   const sig = tr.sig
   updatePass(c, cars, CAR, (plan) => {
-    if (c.turn !== 'straight' || c.park) return false // a car that is about to turn, or is on its way to park, does not overtake
+    if (c.turn !== 'straight' || (c.park && c.special !== 'ambulance')) return false // a car that is about to turn, or is on its way to park, does not overtake (an ambulance on its way to an accident does)
     const onCrossroad = plan.end > -STOP - 0.3 && plan.start < BOX + 0.3
     if (!onCrossroad) return true
     const o = other(c.axis)
+    if (c.special === 'ambulance') return !tr.busy[o] // over the crossroad in the other lane, on a red too, as long as nobody is on it crossing
     if (sig.hold || !allows(sig, c) || tr.busy[o]) return false
     sig.hold = c // the light stays green until i am back in my lane
     return true
@@ -658,7 +663,7 @@ function stepCar(c, cars, walkers, tr, dt) {
 
   // (and a car that goes straight on does not start across the crossroad if a car is standing in its lane right beyond it: that would block the crossroad)
   const beyond = c.turn !== 'straight' || toLine(c) < 0 || !cars.some((o) => o !== c && o.active && !o.arc && o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < c.hw + (o.hwe || o.hw) && pos(o) - o.hl > BOX && pos(o) - o.hl < BOX + 2 * c.hl + 1.2 && (o.crash || o.speed < 0.4))
-  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || (allows(sig, c) && beyond)
+  const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || ((allows(sig, c) || c.special === 'ambulance') && beyond) // (an ambulance does not wait for the green: whoever is in its way on the crossroad, it waits for)
   const turnAt = -BOX - pos(c) // how far the middle of a turning car is from the start of its curve
   const mayTurn = c.turn === 'straight' || turnAt > 4 || turnOK(c, cars, walkers, sig)
   if (!mayTurn) lim = Math.min(lim, brake(Math.max(0, turnAt - 0.05), CAR.brake)) // wait for the room before the curve

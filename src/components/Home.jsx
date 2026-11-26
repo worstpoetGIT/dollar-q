@@ -133,7 +133,7 @@ export default function Home({ s, active, saved, onAdd, onHistory }) {
             </div>
             <div className="map-row">
               {MAP_LIST.map((m) => (
-                <button key={m.id} className={'map-card' + (m.id === mapMeta.id ? ' on' : '')} onClick={() => { setSel(null); setState((st) => ({ ...st, map: m.id })); setMapOpen(false) }}>
+                <button key={m.id} className={'map-card' + (m.id === mapMeta.id ? ' on' : '')} onClick={() => { setState((st) => ({ ...st, map: m.id })); setMapOpen(false) }}>
                   <span className="map-thumb" style={{ background: `linear-gradient(180deg, ${m.sky[0]}, ${m.sky[1]})` }}>
                     <i className="g" style={{ background: m.ground }} />
                     <i className="r" style={{ background: m.road }} />
