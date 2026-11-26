@@ -40,9 +40,9 @@ export function preloadPencil() {
   return loading
 }
 
-// where each pass of the recording starts, how fast it plays and how loud: pure, so it can be tested. the recording is one pass of about 4.85 s of writing,
+// where each pass of the recording starts, how fast it plays and how loud: pure, so it can be tested. the recording is one pass of about 3 s of writing,
 // exactly as it was made (no change of speed); a splash longer than the recording gets it again after a short breath.
-export function passesFor(seconds, clip = 4.85) {
+export function passesFor(seconds, clip = 3.0) {
   const out = [{ at: 0, rate: 1, level: 1 }]
   for (let at = clip + 0.15; at < seconds - 0.8; at += clip + 0.15) out.push({ at, rate: 1, level: 0.95 })
   return out

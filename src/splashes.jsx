@@ -2,8 +2,8 @@
 // each scene is a function of "go" (the animation starts when it turns true) and takes about three seconds.
 import { MAP_LIST } from './maps.js'
 
-export const SPLASH_MS = 5000 // the animation and the pencil sound last this long
-export const SPLASH_SLOW = 1.4 // every time in the scenes below is written for about 3.5 seconds; this stretches them to fill SPLASH_MS
+export const SPLASH_MS = 3000 // the animation and the pencil sound last this long
+export const SPLASH_SLOW = 0.82 // every time in the scenes below is written for about 3.4 seconds; this squeezes them to fit SPLASH_MS
 
 const S = 'M108 64c-18-8-38 2-38 18 0 20 40 22 40 44 0 16-22 24-42 14M92 48 86 178'
 const Q = 'M140 94c2-20 36-26 44-8 8 18-18 24-24 38'
@@ -112,8 +112,8 @@ function Court({ go }) {
       <g stroke="#fff" strokeWidth="3" fill="none" opacity=".55"><rect x="14" y="14" width="212" height="212" rx="4" /><path d="M120 14V226" /><circle cx="120" cy="120" r="46" /></g>
       <g transform="translate(-4 4)"><Draw go={go} d={S} dur="1.3" delay="0.1" stroke="#1d3f8a" strokeWidth="14" /></g>
       <Draw go={go} d={Q} dur=".9" delay="1.4" stroke="#fff" strokeWidth="14" />
-      <ellipse className="sp-fade" style={{ '--delay': '2.1s' }} cx="158" cy="192" rx="15" ry="4" fill="#000" opacity=".3" />
-      <g className="sp-ball" style={{ '--delay': '2.1s' }}>
+      <ellipse className="sp-fade" style={{ '--delay': '1.9s' }} cx="158" cy="192" rx="15" ry="4" fill="#000" opacity=".3" />
+      <g className="sp-ball" style={{ '--delay': '1.9s' }}>
         <circle cx="158" cy="176" r="15" fill="#e8742a" />
         <path d="M143 176h30M158 161v30M148 166c6 6 6 14 0 20M168 166c-6 6-6 14 0 20" stroke="#6b2a0a" strokeWidth="1.6" fill="none" />
       </g>
