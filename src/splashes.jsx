@@ -3,7 +3,9 @@
 import { MAP_LIST } from './maps.js'
 
 export const SPLASH_MS = 3000 // the animation and the pencil sound last this long
-export const SPLASH_SLOW = 0.82 // every time in the scenes below is written for about 3.4 seconds; this squeezes them to fit SPLASH_MS
+// every scene is written with its own times; "k" stretches or squeezes a scene so that its LAST stroke, brick or bounce finishes exactly when the splash (and the scissor cut) ends:
+// k = (SPLASH_MS - the 0.15 s before it starts) / the length the scene is written for (measured: 2.60, 2.95, 2.98, 2.95, 2.60, 3.20 seconds)
+export const SPLASH_SLOW = 1
 
 const S = 'M108 64c-18-8-38 2-38 18 0 20 40 22 40 44 0 16-22 24-42 14M92 48 86 178'
 const Q = 'M140 94c2-20 36-26 44-8 8 18-18 24-24 38'
@@ -188,12 +190,12 @@ function Santy({ go }) {
 
 // the background of each splash (as a style), and its scene. the ids are the ids of the maps.
 export const SPLASHES = {
-  city: { Scene: City, style: {} },
-  lego: { Scene: Lego, style: { '--sbg': '#2fa043', backgroundImage: 'radial-gradient(circle, #46c25b 0 28%, transparent 30%)', backgroundSize: '44px 44px' } },
-  japan: { Scene: Japan, style: { '--sbg': '#f2f2f2' } },
-  ice: { Scene: Santy, style: { '--sbg': '#e6e3dc' } },
-  wire: { Scene: Wire, style: { '--sbg': '#e9e9e9' } },
-  court: { Scene: Court, style: { '--sbg': '#d9a066' } },
+  city: { Scene: City, k: 1.096, style: {} },
+  lego: { Scene: Lego, k: 0.966, style: { '--sbg': '#2fa043', backgroundImage: 'radial-gradient(circle, #46c25b 0 28%, transparent 30%)', backgroundSize: '44px 44px' } },
+  japan: { Scene: Japan, k: 0.956, style: { '--sbg': '#f2f2f2' } },
+  ice: { Scene: Santy, k: 0.966, style: { '--sbg': '#e6e3dc' } },
+  wire: { Scene: Wire, k: 1.096, style: { '--sbg': '#e9e9e9' } },
+  court: { Scene: Court, k: 0.891, style: { '--sbg': '#d9a066' } },
 }
 export const splashFor = (id) => SPLASHES[id] || SPLASHES.city
 export const SPLASH_IDS = MAP_LIST.map((m) => m.id)

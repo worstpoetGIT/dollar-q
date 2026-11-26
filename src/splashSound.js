@@ -1,8 +1,6 @@
 // the sound of the opening splash: one cut of a pair of scissors through paper (the owner's recording, see assets/scissors-cut.NOTE.txt).
-// it plays once, right at the start, and nothing else in the app makes a sound.
+// it plays once and nothing else in the app makes a sound. it is timed so that the cut ENDS exactly when the splash ends (the splash tells how long it lasts).
 import cutUrl from './assets/scissors-cut.wav?url'
-
-export const CUT_AT = 0.2 // seconds after the splash starts
 
 let ctx = null
 let recording = null // the decoded recording once it has loaded (false when it could not be)
@@ -42,22 +40,26 @@ export function preloadSound() {
   return loading
 }
 
-// play the cut once. returns a function that stops it. quietly does nothing where audio is not allowed.
-export function startSound({ volume = 1, at = CUT_AT } = {}) {
+// when the cut has to start so that it is over exactly at "endsAt" (seconds from now), given how long the recording is. pure, so it can be tested.
+export const cutStart = (endsAt, length, elapsed = 0) => Math.max(0, endsAt - length - elapsed)
+
+// play the cut once, so that it ends "endsAt" seconds from now (the end of the splash; 0 or less: right away). returns a function that stops it. quietly does nothing where audio is not allowed.
+export function startSound({ volume = 1, endsAt = 0 } = {}) {
   try {
     const c = audioContext()
     if (!c) return () => {}
     if (c.state === 'suspended') c.resume().catch(() => {})
     let src = null, cancelled = false
-    const play = (delay) => {
+    const play = (elapsed) => {
       if (cancelled || !recording) return
+      const delay = cutStart(endsAt, recording.duration, elapsed)
       const master = c.createGain(); master.gain.value = volume
       src = c.createBufferSource(); src.buffer = recording
       src.connect(master); master.connect(c.destination)
       src.start(c.currentTime + Math.max(0, delay))
     }
-    if (recording) play(at)
-    else if (recording === null) { const t0 = Date.now(); const p = preloadSound(); if (p) p.then(() => play(at - (Date.now() - t0) / 1000)) }
+    if (recording) play(0)
+    else if (recording === null) { const t0 = Date.now(); const p = preloadSound(); if (p) p.then(() => play((Date.now() - t0) / 1000)) }
     return () => { cancelled = true; try { if (src) src.stop(c.currentTime + 0.05) } catch { /* already done */ } }
   } catch {
     return () => {}
