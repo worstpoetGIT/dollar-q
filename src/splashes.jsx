@@ -85,14 +85,10 @@ function Japan({ go }) {
 }
 
 /* ---------- Wireframe: pencil sketch on dotted paper, in the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes) ---------- */
-const PAPER = '#f4f3ef', PENCIL = '#1f2340'
+const PAPER = '#f4f3ef', PENCIL = '#1f2340', RED = '#d8232a'
 function Wire({ go }) {
-  const Outline = ({ d, dur, delay }) => (
-    <>
-      <Draw go={go} d={d} dur={dur} delay={delay} stroke={PENCIL} strokeWidth="26" />
-      <Draw go={go} d={d} dur={dur} delay={delay} stroke={PAPER} strokeWidth="20" />
-    </>
-  )
+  const Black = ({ d, dur, delay }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={PENCIL} strokeWidth="26" />
+  const Paper = ({ d, dur, delay }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={PAPER} strokeWidth="20" />
   return (
     <svg viewBox="0 0 240 240" aria-label="$?">
       <defs>
@@ -100,11 +96,15 @@ function Wire({ go }) {
       </defs>
       <g filter="url(#sp-sketch)">
         <g transform="translate(120 120) scale(.74) translate(-128 -118)">
-          <Outline d={Q} dur=".85" delay="0.1" />
-          <Circ go={go} cx="158" cy="154" r="14" dur=".5" delay="1.0" stroke={PENCIL} strokeWidth="5" />
+          <Black d={Q} dur=".85" delay="0.1" />
+          <Paper d={Q} dur=".85" delay="0.1" />
+          <Circ go={go} cx="158" cy="154" r="14" dur=".5" delay="1.0" stroke={RED} strokeWidth="5" />
+          {/* the $ is two strokes: all the pencil lines go down first and all the paper over them after, so the two strokes join into one outlined letter (as in the icon) */}
           <g transform="translate(-4 4)">
-            <Outline d={S1} dur="1.1" delay="1.1" />
-            <Outline d={S2} dur=".5" delay="2.1" />
+            <Black d={S1} dur="1.1" delay="1.1" />
+            <Black d={S2} dur=".5" delay="2.1" />
+            <Paper d={S1} dur="1.1" delay="1.1" />
+            <Paper d={S2} dur=".5" delay="2.1" />
           </g>
         </g>
       </g>
