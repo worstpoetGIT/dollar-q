@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { splashFor, SPLASH_MS, SPLASH_SLOW } from '../splashes.jsx'
+import { splashFor, SPLASH_MS, SPLASH_HOLD, SPLASH_SLOW } from '../splashes.jsx'
 import { startSound, preloadSound } from '../splashSound.js'
 
 preloadSound() // (the recording is fetched as soon as the app loads)
@@ -14,8 +14,8 @@ export default function Splash({ map = 'city', onDone, sound = true }) {
   useEffect(() => {
     const t0 = setTimeout(() => setGo(true), 150)
     const stop = sound ? startSound({ endsAt: SPLASH_MS / 1000 }) : () => {} // (the cut ends exactly when the splash does)
-    const t1 = setTimeout(() => { setOut(true); stop() }, SPLASH_MS)
-    const t2 = setTimeout(() => doneRef.current && doneRef.current(), SPLASH_MS + 550)
+    const t1 = setTimeout(() => { setOut(true); stop() }, SPLASH_MS + SPLASH_HOLD) // (the animation is finished at SPLASH_MS: the splash waits a moment, with the whole $? on screen, before it fades)
+    const t2 = setTimeout(() => doneRef.current && doneRef.current(), SPLASH_MS + SPLASH_HOLD + 550)
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); stop() }
   }, [sound])
   return (

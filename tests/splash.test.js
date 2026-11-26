@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { startSound, cutStart, soundStatus, SOUND_VOLUME } from '../src/splashSound.js'
-import { SPLASHES, SPLASH_IDS, SPLASH_MS, splashFor } from '../src/splashes.jsx'
+import { SPLASHES, SPLASH_IDS, SPLASH_MS, SPLASH_HOLD, splashFor } from '../src/splashes.jsx'
 import { MAP_LIST } from '../src/maps.js'
 
 describe('opening splashes', () => {
@@ -28,6 +28,11 @@ describe('opening splashes', () => {
     expect(cutStart(end, 1.0, 0.3) + 0.3 + 1.0).toBeCloseTo(end, 6) // (the recording took 0.3 s to load: it starts that much sooner)
     expect(cutStart(end, 5)).toBe(0) // (a recording longer than the splash starts at once)
     expect(cutStart(0, 1)).toBe(0)
+  })
+
+  it('the finished $? waits a moment on screen before the splash fades', () => {
+    expect(SPLASH_HOLD).toBeGreaterThanOrEqual(200)
+    expect(SPLASH_HOLD).toBeLessThan(600)
   })
 
   it('the splash sound plays at 70 % of the volume of the recording', () => {

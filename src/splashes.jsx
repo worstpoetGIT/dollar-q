@@ -2,7 +2,8 @@
 // each scene is a function of "go" (the animation starts when it turns true) and takes about three seconds.
 import { MAP_LIST } from './maps.js'
 
-export const SPLASH_MS = 3000 // the animation and the pencil sound last this long
+export const SPLASH_MS = 3000 // the animation and the sound last this long
+export const SPLASH_HOLD = 300 // then the finished $? stays on screen this long (ms) before the splash starts to fade away
 // every scene is written with its own times; "k" stretches or squeezes a scene so that its LAST stroke, brick or bounce finishes exactly when the splash (and the scissor cut) ends:
 // k = (SPLASH_MS - the 0.15 s before it starts) / the length the scene is written for (measured: 2.60, 2.95, 2.98, 2.95, 2.60, 3.20 seconds)
 export const SPLASH_SLOW = 1
@@ -86,36 +87,38 @@ function Japan({ go }) {
 
 /* ---------- Wireframe: pencil sketch on dotted paper, in the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes) ---------- */
 const PAPER = '#f4f3ef', PENCIL = '#1f2340', RED = '#d8232a'
+// (these are outside of Wire on purpose: a component made inside another one is a NEW component on every render, so React would take it out and put it back,
+// and its animation would start over, for instance when the splash begins to fade: the ? was drawn a second time and the $ disappeared)
+const REVEAL = { stroke: '#fff', strokeWidth: 30, strokeLinecap: 'round' } // (round, a little wider than the lines it shows, so the ends of a stroke are never cut off)
+const WireMask = ({ go, id, d, dur, delay }) => (
+  <mask id={id} maskUnits="userSpaceOnUse" x="-60" y="-60" width="360" height="360">
+    <rect x="-60" y="-60" width="360" height="360" fill="#000" />
+    <Draw go={go} d={d} dur={dur} delay={delay} {...REVEAL} />
+  </mask>
+)
+const LINE = { fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }
 function Wire({ go }) {
   // the finished drawing (exactly the icon) is there all the time, but hidden; a mask for every stroke, written by the pen, shows it bit by bit,
   // so what is on screen is always a piece of the finished letters (no half-drawn tubes)
-  const reveal = { stroke: '#fff', strokeWidth: 30, strokeLinecap: 'round' } // (round, a little wider than the lines it shows, so the ends of a stroke are never cut off)
-  const Mask = ({ id, d, dur, delay }) => (
-    <mask id={id} maskUnits="userSpaceOnUse" x="-60" y="-60" width="360" height="360">
-      <rect x="-60" y="-60" width="360" height="360" fill="#000" />
-      <Draw go={go} d={d} dur={dur} delay={delay} {...reveal} />
-    </mask>
-  )
-  const line = { fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }
   return (
     <svg viewBox="0 0 240 240" aria-label="$?">
       <defs>
         <filter id="sp-sketch" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="7" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="4" /></filter>
-        <Mask id="sp-wq" d={Q} dur=".85" delay="0.1" />
-        <Mask id="sp-ws1" d={S1} dur="1.1" delay="1.1" />
-        <Mask id="sp-ws2" d={S2} dur=".5" delay="2.1" />
+        <WireMask go={go} id="sp-wq" d={Q} dur=".85" delay="0.1" />
+        <WireMask go={go} id="sp-ws1" d={S1} dur="1.1" delay="1.1" />
+        <WireMask go={go} id="sp-ws2" d={S2} dur=".5" delay="2.1" />
       </defs>
       <g filter="url(#sp-sketch)">
         <g transform="translate(120 120) scale(.74) translate(-128 -118)">
-          <path d={Q} stroke={PENCIL} strokeWidth="26" mask="url(#sp-wq)" {...line} />
-          <path d={Q} stroke={PAPER} strokeWidth="20" mask="url(#sp-wq)" {...line} />
+          <path d={Q} stroke={PENCIL} strokeWidth="26" mask="url(#sp-wq)" {...LINE} />
+          <path d={Q} stroke={PAPER} strokeWidth="20" mask="url(#sp-wq)" {...LINE} />
           <Circ go={go} cx="158" cy="154" r="14" dur=".5" delay="1.0" stroke={RED} strokeWidth="5" />
           <g transform="translate(-4 4)">
             {/* the $ is two strokes: the pencil lines of both go down first and the paper over them after, so they join into one outlined letter; the bar is red like the dot */}
-            <g mask="url(#sp-ws1)"><path d={S1} stroke={PENCIL} strokeWidth="26" {...line} /></g>
-            <g mask="url(#sp-ws2)"><path d={S2} stroke={RED} strokeWidth="26" {...line} /></g>
-            <g mask="url(#sp-ws1)"><path d={S1} stroke={PAPER} strokeWidth="20" {...line} /></g>
-            <g mask="url(#sp-ws2)"><path d={S2} stroke={PAPER} strokeWidth="20" {...line} /></g>
+            <g mask="url(#sp-ws1)"><path d={S1} stroke={PENCIL} strokeWidth="26" {...LINE} /></g>
+            <g mask="url(#sp-ws2)"><path d={S2} stroke={RED} strokeWidth="26" {...LINE} /></g>
+            <g mask="url(#sp-ws1)"><path d={S1} stroke={PAPER} strokeWidth="20" {...LINE} /></g>
+            <g mask="url(#sp-ws2)"><path d={S2} stroke={PAPER} strokeWidth="20" {...LINE} /></g>
           </g>
         </g>
       </g>
