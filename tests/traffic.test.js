@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, LOT_FULL, lotSize, startCrash, startHit, dispatchCar, sendWatcher, releaseWatcher, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
+import { setObstacles, newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, LOT_FULL, lotSize, startCrash, startHit, dispatchCar, sendWatcher, releaseWatcher, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -671,6 +671,35 @@ describe('traffic: the ambulance has priority, the police do not, and people wal
       expect(r.outsideLine).toBe(0)
       expect(r.minLine).toBeGreaterThan(0.08) // never on the edge of the house
     }
+  }, 60000)
+})
+
+describe('traffic: people go round the lamp posts', () => {
+  it('nobody ever walks into a lamp post, and they still get about', () => {
+    const posts = [-12, -6, 6, 12].flatMap((i) => [-1, 1].flatMap((sg) => [{ x: i, z: sg * 1.62, r: 0.1 }, { x: sg * 1.62, z: i, r: 0.1 }]))
+    for (const seed of [1, 2, 3]) {
+      setObstacles(posts)
+      const rng = seeded(seed)
+      const cars = fleet('city')
+      const tr = makeTraffic()
+      const walkers = placeWalkers(8, rng)
+      let hits = 0, exits = 0
+      const was = walkers.map((w) => w.active)
+      for (let step = 0; step < 150 * 30; step++) {
+        stepTraffic(cars, walkers, tr, 1 / 30)
+        for (const w of walkers) {
+          if (!w.active) continue
+          for (const f of posts) {
+            const lat = w.axis === 'x' ? f.z : f.x, tt = w.axis === 'x' ? f.x : f.z
+            if (Math.abs(w.lat - lat) < w.hw + f.r - 0.01 && Math.abs(w.t - tt) < w.hl + f.r - 0.01) hits++
+          }
+        }
+        walkers.forEach((w, i) => { if (was[i] && !w.active) exits++; was[i] = w.active })
+      }
+      expect(hits).toBe(0)
+      expect(exits).toBeGreaterThan(2)
+    }
+    setObstacles([])
   }, 60000)
 })
 

@@ -729,6 +729,16 @@ function lineAt(w, lots, t) {
 
 // the two lanes right here: the first next to the road, the second as far out as there is room for (looking a bit
 // ahead, so people move in before a bigger lot starts), and opposite ways use different lanes
+// the lamp posts on this footpath, as { t: along the road, lat: across it, r } (they stand beside the road, on the pavement, so people must go round them)
+function postsOf(w) {
+  const out = []
+  for (const f of fixed) {
+    const lat = w.axis === 'x' ? f.z : f.x, t = w.axis === 'x' ? f.x : f.z
+    if (Math.sign(lat) === w.side) out.push({ t, lat, r: f.r })
+  }
+  return out
+}
+
 function setLane(w, lots) {
   const ahead = w.t + w.dir * (w.hl + 0.9)
   const edge = Math.min(lineAt(w, lots, w.t), lineAt(w, lots, ahead), lineAt(w, lots, w.t - w.dir * (w.hl + 0.3)))
@@ -736,7 +746,9 @@ function setLane(w, lots) {
   const near = w.side * INNER, far = w.side * (INNER + gap)
   w.lane = w.dir > 0 ? near : far
   w.alt = w.dir > 0 ? far : near
-  w.goal = w.passing ? w.alt : w.lane
+  // a lamp post is about to be in the way in my lane: i use the other lane while i go by it
+  const inTheWay = (lane) => postsOf(w).some((f) => (f.t - w.t) * w.dir > -(w.hl + 0.25) && (f.t - w.t) * w.dir < 1.4 && Math.abs(Math.abs(f.lat) - Math.abs(lane)) < w.hw + f.r + 0.04)
+  w.goal = w.passing || (inTheWay(w.lane) && !inTheWay(w.alt)) ? w.alt : w.lane
 }
 
 // n people spread over the four footpaths along the roads
@@ -752,7 +764,7 @@ export function placeWalkers(n, rng, extra = 0) { // extra: how much longer the 
     w.lat = w.lane
     for (let tries = 0; tries < 30; tries++) {
       w.t = (rng() > 0.5 ? 1 : -1) * (4.5 + rng() * (8 + extra))
-      if (!out.some((o) => o.road === w.road && Math.abs(o.t - w.t) < 1.6)) break
+      if (!out.some((o) => o.road === w.road && Math.abs(o.t - w.t) < 1.6) && !postsOf(w).some((f) => Math.abs(f.t - w.t) < 0.8)) break // (not on top of anybody, or of a lamp post)
     }
     w.speed = w.base
     out.push(w)
@@ -810,6 +822,10 @@ function stepWalker(w, walkers, cars, tr, dt) {
   // somebody standing in my way (the drivers of a bump fighting on the footpath): i stop in front of them, and after a moment i turn round and go the other way
   const stop = tr.blockers.length ? followLimit(w, tr.blockers, WALK) : Infinity
   lim = Math.min(lim, stop)
+  for (const f of postsOf(w)) { // never walk into a lamp post: wait for the side step to clear it
+    const ahead = (f.t - w.t) * w.dir
+    if (ahead > 0 && Math.abs(f.lat - w.lat) < w.hw + f.r + 0.03) lim = Math.min(lim, brake(Math.max(0, ahead - w.hl - f.r - 0.12), WALK.brake))
+  }
   if (w.watch) { // an onlooker walks to the spot where they will stand and watch, and stays there
     const d = (w.watch.t - w.t) * w.dir
     lim = Math.min(lim, d < 0 ? 0 : brake(d, WALK.brake))
