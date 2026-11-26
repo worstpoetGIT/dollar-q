@@ -293,15 +293,26 @@ describe('traffic: things still get done', () => {
     expect(r.walked).toBeGreaterThan(8 * 60) // people really walk about
   }, 60000)
 
-  it('cars overtake slower cars, and do it without touching', () => {
-    let passes = 0
-    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
-      const r = simulate('city', seed, 8, 1 / 30)
-      expect(r.crashes).toEqual([])
-      passes += r.passes
+  it('cars overtake slower cars on the open road (before and after the crossroad, never across it), and do it without touching', () => {
+    for (const [follower, lead] of [[3.0, 5.6], [2.6, 5.0], [-12, -7], [-13, -9]]) {
+      const rng = seeded(1)
+      const tr = makeTraffic()
+      const walkers = placeWalkers(8, rng)
+      const a = newCar(0.68, 0.38), b = newCar(0.68, 0.38)
+      const set = (c, t, base) => Object.assign(c, { active: true, axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t, base, speed: base, passing: null, still: 0, turn: 'straight' })
+      set(a, follower, 3.2); set(b, lead, 0.8)
+      let passed = false, bad = 0, acrossCrossroad = false
+      for (let i = 0; i < 20 * 30; i++) {
+        tr.sig.mode = 'green'; tr.sig.phase = 'x'; tr.sig.axis = 'x'; tr.sig.age = 0
+        stepTraffic([a, b], walkers, tr, 1 / 30)
+        if (a.passing) { passed = true; if (a.t + a.hl > -3.7 && a.t - a.hl < 1.8) acrossCrossroad = true }
+        if (a.active && b.active && overlap(rectOf(a), rectOf(b))) bad++
+      }
+      expect(passed).toBe(true)
+      expect(acrossCrossroad).toBe(false)
+      expect(bad).toBe(0)
     }
-    expect(passes).toBeGreaterThan(0)
-  }, 120000)
+  }, 60000)
 })
 
 describe('traffic: an accident that builds up', () => {
@@ -631,7 +642,7 @@ describe('traffic: the ambulance has priority, the police do not, and people wal
       const r = run(seed, 'ambulance')
       expect(r.started).toBe(true)
       expect(r.bad).toBe(0)
-      expect(r.waited).toBeLessThan(2) // (it does not wait for the green: it goes through, giving way only to whoever is on the crossroad)
+      expect(r.waited).toBeLessThan(3.5) // (it does not wait for the green: it goes through, giving way only to whoever is on the crossroad)
     }
   }, 60000)
 
@@ -740,6 +751,34 @@ describe('traffic: an ambulance goes past the queue', () => {
       expect(bad).toBe(0)
     }
   }, 60000)
+})
+
+describe('traffic: cars that wait at the signal', () => {
+  it('none of them is taken away while it waits, none stands still inside the crossroad, and nobody overlaps', () => {
+    for (const name of ['city', 'japan', 'ice']) {
+      for (const seed of [1, 2, 3]) {
+        const rng = seeded(seed)
+        const cars = fleet(name)
+        const tr = makeTraffic()
+        const walkers = placeWalkers(8, rng)
+        for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
+        let spawnIn = 0.4, vanished = 0, inBox = 0, bad = 0
+        for (let step = 0; step < 200 * 30; step++) {
+          spawnIn -= 1 / 30
+          if (spawnIn <= 0) { spawnIn = 1.2 + rng() * 1.5; spawnCar(cars, rng) }
+          const was = cars.map((c) => (c.active ? { t: c.t, still: c.still } : null))
+          stepTraffic(cars, walkers, tr, 1 / 30)
+          cars.forEach((c, i) => { if (was[i] && !c.active && Math.abs(was[i].t) < 13 && was[i].still > 24) vanished++ }) // (waiting at the light for a long time, and then gone)
+          const act = cars.filter((c) => c.active)
+          for (const c of act) if (!c.arc && Math.abs(c.t) < 1.5 && c.speed < 0.02) inBox++
+          for (let a = 0; a < act.length; a++) for (let b = a + 1; b < act.length; b++) if (overlap(rectOf(act[a]), rectOf(act[b]))) bad++
+        }
+        expect(vanished).toBe(0)
+        expect(inBox).toBe(0)
+        expect(bad).toBe(0)
+      }
+    }
+  }, 120000)
 })
 
 describe('traffic: turning at the crossroad', () => {

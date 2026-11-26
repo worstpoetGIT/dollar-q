@@ -646,9 +646,7 @@ function stepCar(c, cars, walkers, tr, dt) {
     if (!onCrossroad) return true
     const o = other(c.axis)
     if (c.special === 'ambulance') return !tr.busy[o] // over the crossroad in the other lane, on a red too, as long as nobody is on it crossing
-    if (sig.hold || !allows(sig, c) || tr.busy[o]) return false
-    sig.hold = c // the light stays green until i am back in my lane
-    return true
+    return false // nobody but an ambulance overtakes across a crossroad: a car that waits at the line for its light or its arrow is waited for, not gone round (that ended nose to nose with the queue of the other lane, the light held, and the cars stuck until they were taken away)
   })
 
   let lim = c.passing ? c.base * CAR.boost : c.base
@@ -662,7 +660,7 @@ function stepCar(c, cars, walkers, tr, dt) {
   if (c.waitMerge) lim = Math.min(lim, brake(Math.max(0, homeGap(c, cars) - 0.8), CAR.brake)) // (out in the other lane, slowing down for whatever is stopped in mine)
 
   // (and a car that goes straight on does not start across the crossroad if a car is standing in its lane right beyond it: that would block the crossroad)
-  const beyond = c.turn !== 'straight' || toLine(c) < 0 || !cars.some((o) => o !== c && o.active && !o.arc && o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < c.hw + (o.hwe || o.hw) && pos(o) - o.hl > BOX && pos(o) - o.hl < BOX + 2 * c.hl + 1.2 && (o.crash || o.speed < 0.4))
+  const beyond = c.turn !== 'straight' || toLine(c) < 0 || !walkers.some((w) => w.crossing && w.axis !== c.axis && c.dir * w.lat > 0) && !cars.some((o) => o !== c && o.active && !o.arc && o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < c.hw + (o.hwe || o.hw) && pos(o) - o.hl > BOX && pos(o) - o.hl < BOX + 2 * c.hl + 1.2 && (o.crash || o.speed < 0.4))
   const go = inCrossroad(c) || committed(c) || toLine(c) < 0 || ((allows(sig, c) || c.special === 'ambulance') && beyond) // (an ambulance does not wait for the green: whoever is in its way on the crossroad, it waits for)
   const turnAt = -BOX - pos(c) // how far the middle of a turning car is from the start of its curve
   const mayTurn = c.turn === 'straight' || turnAt > 4 || turnOK(c, cars, walkers, sig)
@@ -687,7 +685,9 @@ function stepCar(c, cars, walkers, tr, dt) {
   if (c.turn !== 'straight' && pos(c) >= -BOX) { // its middle is at the edge of the crossroad: into the curve
     if (mayTurn) { c.arc = turnArc(c); placeOnArc(c) } else { c.t = -c.dir * BOX - c.dir * 0.01; c.speed = 0 }
   }
-  if (pos(c) - c.hl > CAR.edge + reach || (c.still > 25 && !c.special)) { c.active = false; c.passing = null } // (an emergency vehicle waits for as long as it is needed)
+  const atRed = toLine(c) >= -0.2 && !allows(sig, c) // (waiting for its light: that is not being stuck, however long the other roads keep their green)
+  c.idleGo = c.speed < 0.03 && !atRed ? (c.idleGo || 0) + dt : 0 // how long it has stood still without a red to blame
+  if (pos(c) - c.hl > CAR.edge + reach || (c.idleGo > 25 && !c.special)) { c.active = false; c.passing = null } // (an emergency vehicle waits for as long as it is needed)
 }
 
 // room for a car at its spot: nobody close in the same lane, nobody overtaking into it
