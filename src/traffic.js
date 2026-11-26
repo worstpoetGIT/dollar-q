@@ -177,10 +177,9 @@ let fixed = [] // things that stand still beside the road: [{ x, z, r }] (lamp p
 export const setObstacles = (list) => { fixed = list }
 
 const GREEN = 5 // seconds a road keeps its green before it has to give way (if somebody is waiting)
-const YELLOW = 2.2 // every green ends with a yellow, cars that can still stop do, the others carry on through
 const PLAZA = 3.5 // people cross the whole crossroad area, corners included, in one go
 
-// the light: which road has it, and whether it is green, yellow or red for everybody (the short all-red in between)
+// the light: which road has it, and whether it is green or red (there is no yellow: when a green ends it is red, cars that can still stop do, the ones too close to stop carry on through, and the next green waits until the crossroad is empty)
 export function makeTraffic(extra = 0) {
   reach = extra
   return { sig: { phase: 'x', axis: 'x', left: 0, mode: 'green', age: 0, hold: null }, busy: { x: 0, z: 0 }, want: { x: false, z: false }, lots: [], blockers: [] }
@@ -271,8 +270,8 @@ function updatePass(m, movers, cfg, canStart) {
     const behind = p(lead) - lead.hl - (p(m) + m.hl) > cfg.clear
     if (!lead.active || ahead || behind) {
       m.passing = null
-      const next = m.special === 'ambulance' ? passPlan(m, movers, cfg) : null // the next one in the queue: an ambulance stays out and goes on past it
-      if (next) { m.passing = next.lead; return }
+      const next = m.special === 'ambulance' ? passPlan(m, movers, cfg) : null // the next one in the queue: an ambulance stays out and goes on past it (but never into a crossroad)
+      if (next && canStart(next)) { m.passing = next.lead; return }
       if (roomToMerge(m, movers, cfg)) m.goal = m.lane
       else m.waitMerge = true
     }
@@ -324,7 +323,6 @@ const PHASES = [
   { id: 'z', axis: 'z', left: 0 }, { id: 'zl+', axis: 'z', left: 1 }, { id: 'zl-', axis: 'z', left: -1 },
 ]
 const LEFT_GREEN = 2.4 // seconds a left arrow stays on if somebody else is waiting
-const LEFT_YELLOW = 1.3
 const leftKey = (axis, dir) => axis + (dir > 0 ? '+' : '-')
 
 function updateSignal(cars, walkers, tr, dt) {
@@ -360,14 +358,12 @@ function updateSignal(cars, walkers, tr, dt) {
   const mine = siren && PHASES[here].axis === siren.axis && !PHASES[here].left // the siren is on the road that has the green
   if (sig.hold) sig.mode = 'green' // somebody is overtaking through the crossroad, nobody else goes now
   else if (siren && sig.mode === 'green') {
-    if (!mine && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // everybody else gets their yellow and then a red
+    if (!mine && sig.age >= 1) { sig.mode = 'red'; sig.age = 0 } // everybody else gets a red
   } else if (sig.mode === 'green') {
     const limit = PHASES[here].left ? LEFT_GREEN : GREEN
-    if (elsewhere && !demand(PHASES[here]) && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // nobody here, hand over soon
-    else if (elsewhere && sig.age >= limit) { sig.mode = 'yellow'; sig.age = 0 }
-  } else if (sig.mode === 'yellow') {
-    if (sig.age >= (sig.left ? LEFT_YELLOW : YELLOW) && !busy[sig.axis]) { sig.mode = 'red'; sig.age = 0 }
-  } else if (sig.age >= 0.6) {
+    if (elsewhere && !demand(PHASES[here]) && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'red'; sig.age = 0 } // nobody here, hand over soon
+    else if (elsewhere && sig.age >= limit) { sig.mode = 'red'; sig.age = 0 }
+  } else if (sig.age >= 0.6 && ((!busy.x && !busy.z) || sig.age > 12)) { // (red for everybody until nobody is in the crossroad and nobody is too close to stop: nothing is ever left standing in the middle of it)
     let next = (here + 1) % PHASES.length
     for (let k = 1; k <= PHASES.length; k++) {
       const i = (here + k) % PHASES.length
@@ -516,6 +512,7 @@ function walkerRect(w, more = 0, wide = 0) {
 
 // a long car swings its tail out when it turns, so before it starts the curve the whole swept area must be free,
 // also for the next two seconds of whoever is still coming (at the speed they have now)
+const rankOf = (m) => (m.axis === 'x' ? 2 : 0) + (m.dir > 0 ? 1 : 0) // who goes first when two vehicles wait for each other at the crossroad
 export function sweepClear(c, cars, walkers, sig, arc = null, why = null) { // (why: a list to say what is in the way, for finding out)
   const no = (reason) => { if (why) why.push(reason); return false }
   const a = arc || turnArc(c)
@@ -532,6 +529,8 @@ export function sweepClear(c, cars, walkers, sig, arc = null, why = null) { // (
     for (const o of cars) {
       if (o === c || !o.active) continue
       if (o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < 0.4 && o.t * c.dir < c.t * c.dir) continue // in my lane behind me: the curve never reaches it
+      // two long vehicles standing at the edge of the crossroad, both waiting to turn right (right turns from opposite roads never cross, only their tails swing wide), each one in the way of the other's swing: one of them (the same one every time) goes first, the other waits for it
+      if (c.turn === 'right' && o.turn === 'right' && !o.arc && o.speed < 0.05 && c.speed < 0.05 && Math.abs(o.t) < BOX + o.hl + 0.4 && Math.abs(c.t) < BOX + c.hl + 0.4 && rankOf(c) > rankOf(o)) continue
       let reach = 0.3
       if (!o.arc && !o.crash && !(toLine(o) >= 0 && !allows(sig, o))) reach += Math.min(o.base * by, o.speed * by + 0.5 * CAR.accel * by * by) // it may speed up (unless a red holds it)
       if (rectsTouch(mine, rectOf(o, reach, 0.08))) return no(`car t=${o.t.toFixed(1)} lat=${o.lat.toFixed(2)} ${o.crash ? 'wreck' : o.arc ? 'turning' : 'driving'} s=${s.toFixed(1)}`)
@@ -645,8 +644,7 @@ function stepCar(c, cars, walkers, tr, dt) {
     const onCrossroad = plan.end > -STOP - 0.3 && plan.start < BOX + 0.3
     if (!onCrossroad) return true
     const o = other(c.axis)
-    if (c.special === 'ambulance') return !tr.busy[o] // over the crossroad in the other lane, on a red too, as long as nobody is on it crossing
-    return false // nobody but an ambulance overtakes across a crossroad: a car that waits at the line for its light or its arrow is waited for, not gone round (that ended nose to nose with the queue of the other lane, the light held, and the cars stuck until they were taken away)
+    return false // (an ambulance does not go round a queue across a crossroad either: it ended nose to nose with the cars waiting at the line on the other side, and the whole street stood still. the lights turn for it instead.) a car that waits at the line for its light or its arrow is waited for, not gone round
   })
 
   let lim = c.passing ? c.base * CAR.boost : c.base
@@ -687,7 +685,8 @@ function stepCar(c, cars, walkers, tr, dt) {
   }
   const atRed = toLine(c) >= -0.2 && !allows(sig, c) // (waiting for its light: that is not being stuck, however long the other roads keep their green)
   c.idleGo = c.speed < 0.03 && !atRed ? (c.idleGo || 0) + dt : 0 // how long it has stood still without a red to blame
-  if (pos(c) - c.hl > CAR.edge + reach || (c.idleGo > 25 && !c.special)) { c.active = false; c.passing = null } // (an emergency vehicle waits for as long as it is needed)
+  // the last resort against a street that stands still for good: whoever has stood without a red to blame for a minute and a quarter goes (a queue behind an accident is over long before that). an emergency vehicle that is parked where it was sent waits as long as it is needed.
+  if (pos(c) - c.hl > CAR.edge + reach || (c.idleGo > 75 && !(c.special && c.park && c.park.at))) { c.active = false; c.passing = null }
 }
 
 // room for a car at its spot: nobody close in the same lane, nobody overtaking into it
@@ -773,6 +772,8 @@ function setLane(w, lots, others = null) {
   // somebody coming the other way who had to step into my lane to get round a post: i move over to my other lane for a moment so we can go by each other
   const makeWay = !!others && others.some((o) => o !== w && o.active && o.road === w.road && o.dir !== w.dir && Math.abs(o.lat - o.lane) > 0.3 && Math.abs(o.lat - w.lane) < 0.45 && (o.t - w.t) * w.dir > -0.5 && (o.t - w.t) * w.dir < 2.4)
   w.goal = w.passing || makeWay && !inTheWay(w.alt) || (inTheWay(w.lane) && !inTheWay(w.alt) && (altFree || inOther)) ? w.alt : w.lane
+  // the lane i want to move to has somebody in it right beside me (somebody who is going by me): i stay in the one i am in until they are past
+  if (others && Math.abs(w.goal - w.lat) > 0.3 && others.some((o) => o !== w && o.active && o.road === w.road && Math.abs(o.t - w.t) < w.hl + o.hl + 0.2 && Math.abs(o.lat - w.goal) < w.hw + o.hw + 0.05)) w.goal = Math.abs(w.lat - w.lane) <= Math.abs(w.lat - w.alt) ? w.lane : w.alt
 }
 
 // n people spread over the four footpaths along the roads
@@ -885,7 +886,7 @@ export function dispatchCar(c, cars, axis, lane, spot, special) {
 export function sendWatcher(w, walkers, axis, side, spot) {
   const way = spot === null ? Math.sign(w.t) || 1 : Math.sign(spot) // (no spot: somebody walks back on to the street from the end of the footpath they were taken from)
   const end = way * (walkTip() - 0.05)
-  if (walkers.some((o) => o !== w && o.active && o.axis === axis && o.side === side && Math.abs(o.t - end) < 1.8)) return false // somebody is at the end of the footpath: not yet
+  if (walkers.some((o) => o !== w && o.active && o.axis === axis && o.side === side && Math.abs(o.t - end) < 3.6)) return false // somebody is at the end of the footpath: not yet
   Object.assign(w, { axis, side, road: axis + side, dir: -way, t: end, speed: w.base, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0, blocked: 0, watch: spot === null ? null : { t: spot, at: false }, leaving: false, down: false, hitBy: null })
   setLane(w, [])
   w.lat = w.lane

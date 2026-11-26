@@ -615,9 +615,9 @@ export class CityScene {
       bx(head, 0.22, 0.8, 0.3, S.head, 0.3, 1.6, 0)
       if (S.rim) bx(head, 0.02, 1.26, 0.36, S.rim, 0.19, 1.17, 0) // (the back frame covers the lamps and the arrows)
       if (S.roof) bx(head, 0.3, 0.05, 0.38, S.roof, 0.3, 2.4, 0)
-      const mats = LIT.map((c, i) => {
+      const mats = [LIT[0], LIT[2]].map((c, i) => { // a red lamp over a green one (no yellow)
         const m = new THREE.MeshBasicMaterial({ color: c })
-        const y = 2.24 - i * 0.24
+        const y = 2.22 - i * 0.34
         if (S.lamp === 'disc') mk(head, new THREE.CylinderGeometry(0.09, 0.09, 0.05, 10), m, 0.43, y, 0, false).rotation.z = Math.PI / 2
         else if (S.lamp === 'box') mk(head, new THREE.BoxGeometry(0.05, 0.15, 0.15), m, 0.43, y, 0, false)
         else mk(head, new THREE.SphereGeometry(0.085, 8, 6), m, 0.43, y, 0, false)
@@ -646,20 +646,19 @@ export class CityScene {
     this.signalKey = null
   }
 
-  // red on top, yellow, green below: light up the one that is on
+  // red on top, green below: light up the one that is on
   paintSignals() {
     const sig = this.traffic.sig
     const key = sig.phase + sig.mode
     if (key === this.signalKey) return
     this.signalKey = key
-    const shade = sig.mode === 'yellow' ? 1 : 2 // which lamp colour is lit when this road has its turn
     for (const h of this.signals) {
-      const through = sig.left === 0 && h.axis === sig.axis && sig.mode !== 'red' // the round lamps only show green or yellow in a road's through phase
-      const on = through ? shade : 0
-      h.mats.forEach((m, i) => m.color.setHex(i === on ? LIT[i] : OFF[i]))
-      const mine = sig.left === h.dir && h.axis === sig.axis && sig.mode !== 'red' // this head's left arrow has its own phase
-      h.left.color.setHex(mine ? (sig.mode === 'yellow' ? LIT[1] : LIT[2]) : ARROW_OFF)
-      h.right.color.setHex(through ? (sig.mode === 'yellow' ? LIT[1] : LIT[2]) : ARROW_OFF) // a right turn goes with the through light
+      const through = sig.left === 0 && h.axis === sig.axis && sig.mode === 'green' // the round lamps show green only in a road's through phase, red the rest of the time
+      const on = through ? 1 : 0 // (0: the red lamp, 1: the green one)
+      h.mats.forEach((m, i) => m.color.setHex(i === on ? LIT[i ? 2 : 0] : OFF[i ? 2 : 0]))
+      const mine = sig.left === h.dir && h.axis === sig.axis && sig.mode === 'green' // this head's left arrow has its own phase
+      h.left.color.setHex(mine ? LIT[2] : ARROW_OFF)
+      h.right.color.setHex(through ? LIT[2] : ARROW_OFF) // a right turn goes with the through light
     }
   }
 
@@ -2334,7 +2333,7 @@ const BRICK_KITS = {
 // the size of a lot follows its level: small while there is little spending, bigger (and the footpath thinner) the more is spent
 const stageSize = (lot) => lotSize(lot.built ? lot.built.L : 0)
 
-// traffic light colours: red, yellow, green, lit and switched off
+// traffic light colours: red and green (the yellow is not used any more), lit and switched off
 const LIT = [0xff2b2b, 0xffc400, 0x2bff6a]
 const OFF = [0x3a0d0d, 0x3a2e00, 0x0d3a1a]
 const FRAME = 0.62 // the size of the frame a build is planned in (the size of a typical building model in its lot)
