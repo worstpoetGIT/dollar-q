@@ -87,24 +87,35 @@ function Japan({ go }) {
 /* ---------- Wireframe: pencil sketch on dotted paper, in the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes) ---------- */
 const PAPER = '#f4f3ef', PENCIL = '#1f2340', RED = '#d8232a'
 function Wire({ go }) {
-  const Black = ({ d, dur, delay, color = PENCIL }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={color} strokeWidth="26" />
-  const Paper = ({ d, dur, delay }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={PAPER} strokeWidth="20" />
+  // the finished drawing (exactly the icon) is there all the time, but hidden; a mask for every stroke, written by the pen, shows it bit by bit,
+  // so what is on screen is always a piece of the finished letters (no half-drawn tubes)
+  const reveal = { stroke: '#fff', strokeWidth: 30, strokeLinecap: 'round' } // (round, a little wider than the lines it shows, so the ends of a stroke are never cut off)
+  const Mask = ({ id, d, dur, delay }) => (
+    <mask id={id} maskUnits="userSpaceOnUse" x="-60" y="-60" width="360" height="360">
+      <rect x="-60" y="-60" width="360" height="360" fill="#000" />
+      <Draw go={go} d={d} dur={dur} delay={delay} {...reveal} />
+    </mask>
+  )
+  const line = { fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' }
   return (
     <svg viewBox="0 0 240 240" aria-label="$?">
       <defs>
         <filter id="sp-sketch" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="7" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="4" /></filter>
+        <Mask id="sp-wq" d={Q} dur=".85" delay="0.1" />
+        <Mask id="sp-ws1" d={S1} dur="1.1" delay="1.1" />
+        <Mask id="sp-ws2" d={S2} dur=".5" delay="2.1" />
       </defs>
       <g filter="url(#sp-sketch)">
         <g transform="translate(120 120) scale(.74) translate(-128 -118)">
-          <Black d={Q} dur=".85" delay="0.1" />
-          <Paper d={Q} dur=".85" delay="0.1" />
+          <path d={Q} stroke={PENCIL} strokeWidth="26" mask="url(#sp-wq)" {...line} />
+          <path d={Q} stroke={PAPER} strokeWidth="20" mask="url(#sp-wq)" {...line} />
           <Circ go={go} cx="158" cy="154" r="14" dur=".5" delay="1.0" stroke={RED} strokeWidth="5" />
-          {/* the $ is two strokes: all the pencil lines go down first and all the paper over them after, so the two strokes join into one outlined letter (as in the icon); the bar is drawn in red, like the dot */}
           <g transform="translate(-4 4)">
-            <Black d={S1} dur="1.1" delay="1.1" />
-            <Black d={S2} dur=".5" delay="2.1" color={RED} />
-            <Paper d={S1} dur="1.1" delay="1.1" />
-            <Paper d={S2} dur=".5" delay="2.1" />
+            {/* the $ is two strokes: the pencil lines of both go down first and the paper over them after, so they join into one outlined letter; the bar is red like the dot */}
+            <g mask="url(#sp-ws1)"><path d={S1} stroke={PENCIL} strokeWidth="26" {...line} /></g>
+            <g mask="url(#sp-ws2)"><path d={S2} stroke={RED} strokeWidth="26" {...line} /></g>
+            <g mask="url(#sp-ws1)"><path d={S1} stroke={PAPER} strokeWidth="20" {...line} /></g>
+            <g mask="url(#sp-ws2)"><path d={S2} stroke={PAPER} strokeWidth="20" {...line} /></g>
           </g>
         </g>
       </g>
