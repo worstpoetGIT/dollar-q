@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, startHit, dispatchCar, sendWatcher, releaseWatcher, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -471,6 +471,129 @@ describe('traffic: turning back behind a wreck', () => {
     }
     expect(rerouted).toBeGreaterThan(3)
   }, 240000)
+})
+
+describe('traffic: a car that loses control hits somebody on the pavement', () => {
+  const setup = (seed = 4) => {
+    const rng = seeded(seed)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    const w = walkers.find((x) => x.axis === 'x' && x.side === 1)
+    Object.assign(w, { t: 15, dir: -1, base: 0.9 })
+    const c = cars[0]
+    Object.assign(c, { active: true, axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t: 6.5, base: 2.6, speed: 2.6, passing: null, still: 0, turn: 'straight' })
+    for (const o of walkers) if (o !== w && o.axis === 'x' && o.side === 1) o.active = false
+    return { cars, tr, walkers, w, c }
+  }
+
+  it('the car steers off the road a little at a time, up on to the pavement, reaches the person and stops, and nobody overlaps before that', () => {
+    const s = setup()
+    startHit(s.c, s.w, 1)
+    let hitAt = null, maxYaw = 0, jump = 0, early = false, last = s.c.t
+    for (let i = 0; i < 12 * 30; i++) {
+      stepTraffic(s.cars, s.walkers, s.tr, 1 / 30)
+      maxYaw = Math.max(maxYaw, Math.abs(s.c.yaw))
+      jump = Math.max(jump, Math.abs(s.c.t - last)); last = s.c.t
+      if (s.w.down && hitAt === null) hitAt = i / 30
+      if (hitAt === null && overlap(rectOf(s.c), rectOf(s.w))) early = true
+    }
+    expect(hitAt).not.toBeNull()
+    expect(hitAt).toBeGreaterThan(0.8) // it takes a moment
+    expect(maxYaw).toBeGreaterThan(0.12) // it really steered
+    expect(jump).toBeLessThan(0.25)
+    expect(early).toBe(false)
+    expect(s.c.lat).toBeGreaterThan(1.2) // it is on the pavement
+    expect(s.c.speed).toBe(0)
+    expect(overlap(rectOf(s.c), rectOf(s.w))).toBe(false) // stopped touching, not inside
+    // and they both stay put
+    const at = [s.c.t, s.c.lat, s.w.t, s.w.lat]
+    for (let i = 0; i < 20 * 30; i++) stepTraffic(s.cars, s.walkers, s.tr, 1 / 30)
+    expect([s.c.t, s.c.lat, s.w.t, s.w.lat]).toEqual(at)
+  })
+
+  it('other people stop behind the one who was hit and nobody walks through anybody', () => {
+    for (const seed of [1, 2, 3]) {
+      const s = setup(seed)
+      startHit(s.c, s.w, 1)
+      let bad = 0
+      for (let i = 0; i < 90 * 30; i++) {
+        stepTraffic(s.cars, s.walkers, s.tr, 1 / 30)
+        const all = [...s.cars.filter((x) => x.active), ...s.walkers.filter((x) => x.active)]
+        for (let a = 0; a < all.length; a++) for (let b = a + 1; b < all.length; b++) if (overlap(rectOf(all[a]), rectOf(all[b]))) bad++
+      }
+      expect(bad).toBe(0)
+    }
+  }, 60000)
+})
+
+describe('traffic: an ambulance or a police car parks where it is sent and drives off when released', () => {
+  it('stops at the spot (even through a crossroad it has to wait at), stays as long as asked, then leaves the road', () => {
+    const rng = seeded(2)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    const a = cars[0]
+    Object.assign(a, { active: true, special: 'ambulance', axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t: -14, base: 3.6, speed: 3.6, passing: null, still: 0, turn: 'straight', park: { t: 9 } })
+    let stoppedAt = null
+    for (let i = 0; i < 40 * 30; i++) { stepTraffic(cars, walkers, tr, 1 / 30); if (a.park && a.park.at && stoppedAt === null) stoppedAt = i / 30 }
+    expect(stoppedAt).not.toBeNull()
+    expect(a.speed).toBeLessThan(0.1)
+    expect(a.t + a.hl).toBeLessThan(9 + 0.35) // (its nose is at the spot)
+    expect(a.active).toBe(true) // not cleared away as idle, however long it waits
+    a.park = null
+    for (let i = 0; i < 20 * 30; i++) stepTraffic(cars, walkers, tr, 1 / 30)
+    expect(a.active).toBe(false) // it drove off the end of the road
+  })
+
+  it('the ordinary traffic never uses it as a car', () => {
+    const rng = seeded(3)
+    const cars = fleet('city')
+    cars[0].special = 'police'
+    for (let i = 0; i < 300; i++) { const c = spawnCar(cars, rng); if (c) { expect(c.special).toBeNull(); c.active = false } }
+  })
+})
+
+describe('traffic: onlookers and emergency vehicles come in from the ends of the road and leave along it', () => {
+  it('an onlooker walks to the spot, stands there as long as asked, then walks off the end of the footpath', () => {
+    const rng = seeded(5)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    const w = walkers[7]
+    w.active = false
+    expect(sendWatcher(w, walkers, 'x', 1, 9)).toBe(true)
+    let at = null
+    for (let i = 0; i < 30 * 30; i++) { stepTraffic(cars, walkers, tr, 1 / 30); if (w.watch && w.watch.at && at === null) at = i / 30 }
+    expect(at).not.toBeNull()
+    expect(Math.abs(w.t - 9)).toBeLessThan(0.15)
+    expect(w.speed).toBeLessThan(0.05)
+    expect(w.active).toBe(true)
+    releaseWatcher(w, tr.lots)
+    for (let i = 0; i < 40 * 30; i++) stepTraffic(cars, walkers, tr, 1 / 30)
+    expect(w.active).toBe(false)
+  })
+
+  it('nobody overlaps while onlookers come, stand and go', () => {
+    for (const seed of [1, 2]) {
+      const rng = seeded(seed)
+      const cars = fleet('city')
+      const tr = makeTraffic()
+      const walkers = placeWalkers(12, rng)
+      const extra = walkers.slice(8)
+      extra.forEach((w) => { w.active = false })
+      extra.forEach((w, i) => sendWatcher(w, walkers, 'x', 1, 7 + i * 1.1))
+      let bad = 0
+      for (let i = 0; i < 80 * 30; i++) {
+        if (i === 35 * 30) extra.forEach((w) => releaseWatcher(w, tr.lots))
+        if (i % 40 === 0 && cars.filter((c) => c.active).length < 4) spawnCar(cars, rng)
+        stepTraffic(cars, walkers, tr, 1 / 30)
+        const all = [...cars.filter((x) => x.active), ...walkers.filter((x) => x.active)]
+        for (let a = 0; a < all.length; a++) for (let b = a + 1; b < all.length; b++) if (overlap(rectOf(all[a]), rectOf(all[b]))) bad++
+      }
+      expect(bad).toBe(0)
+    }
+  }, 60000)
 })
 
 describe('traffic: turning at the crossroad', () => {

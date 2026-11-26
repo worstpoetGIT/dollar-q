@@ -33,6 +33,7 @@ export const LANES = [INNER, INNER + SPACING[0]]
 export const newCar = (hl, hw) => ({
   active: false, axis: 'x', road: 'x', lane: 0, alt: 0, lat: 0, goal: 0, dir: 1, t: 0, speed: 0, base: 2.6, hl, hw, passing: null, still: 0, crash: null,
   yaw: 0, stuck: 0, // yaw: how far off the road it points (only a car that lost control); stuck: seconds it has waited behind a wreck
+  special: null, park: null, // special: an ambulance or a police car (never part of the ordinary traffic); park: { t } a spot on the road to stop at, until it is released
   turn: 'straight', arc: null, // at the crossroad a car goes straight on, or turns left or right (arc: the curve it is on while it turns)
 })
 
@@ -67,8 +68,43 @@ export function startCrash(a, b, kind = 'rear') {
   b.crash.toward = -side
 }
 
+// the driver loses control on the narrowed road: the car steers off the road, up on to the pavement, at somebody walking there, and hits them
+export function startHit(car, walker, toward) {
+  car.crash = { role: 'driver', kind: 'hit', other: walker, hit: false, t: 0, toward }
+  car.passing = null; car.turn = 'straight'; car.yaw = 0
+  walker.hitBy = car
+}
+
+function stepHit(c, k, dt) {
+  const w = k.other
+  k.t += dt
+  c.still = 0
+  c.goal = c.lat // (it is where it is on the footpath: for the traffic behind it, it is not in the lane any more)
+  if (k.hit) { c.speed = 0; return }
+  const grow = Math.min(1, k.t / 0.9)
+  const left = Math.min(1, Math.abs(w.lat - c.lat) / 0.45) // (how much of the way to the person's path is left)
+  c.yaw = yawFor(c, k.toward) * 0.36 * grow * left
+  c.speed += (Math.max(c.base, 2.4) - c.speed) * Math.min(1, 2 * dt)
+  const lat = c.axis === 'x' ? -c.dir : c.dir
+  c.t += c.dir * Math.cos(c.yaw) * c.speed * dt
+  c.lat += lat * Math.sin(c.yaw) * c.speed * dt
+  c.hwe = sideReach(c)
+  if (rectsTouch(rectOf(c), walkerRect(w, 0, 0))) { // it reaches them: the car stops where it is, the person goes down
+    for (let i = 0; i < 40 && rectsTouch(rectOf(c), walkerRect(w, 0, 0)); i++) { c.t -= c.dir * Math.cos(c.yaw) * 0.02; c.lat -= lat * Math.sin(c.yaw) * 0.02 }
+    c.speed = 0
+    c.yaw *= 0.5
+    c.hwe = sideReach(c)
+    k.hit = true
+    w.down = true
+    w.speed = 0
+  }
+}
+
 export function endCrash(a, b) {
-  for (const c of [a, b]) { c.crash = null; c.still = 0; c.stuck = 0; c.hwe = 0; c.freeSlide = 2.2 } // (nose to nose after a head-on: for a moment each may slide back to its lane, whoever is beside)
+  for (const c of [a, b]) {
+    if (!c) continue
+    c.crash = null; c.still = 0; c.stuck = 0; c.hwe = 0; c.goal = c.lane; c.freeSlide = 2.2 // (nose to nose after a head-on: for a moment each may slide back to its lane, whoever is beside)
+  }
 }
 
 // which way a car must turn (the sign of its yaw) to move towards 'toward' (-1 or +1, along the lateral axis of its road)
@@ -76,6 +112,7 @@ const yawFor = (c, toward) => (c.axis === 'x' ? toward * c.dir * -1 : toward * c
 
 function stepCrash(c, cars, dt) {
   const k = c.crash
+  if (k.kind === 'hit') { stepHit(c, k, dt); return }
   k.t += dt
   if (k.hit) { // a wreck: stopped, resting a bit crooked
     c.speed = 0
@@ -532,7 +569,7 @@ export const setRoadSense = (on) => { roadSense = on } // (the tests turn it off
 
 // road sense: a car that is about to go into a road with a wreck on it takes another road instead, and one that was about to turn into it goes straight on
 function reroute(c, cars) {
-  if (!roadSense || c.rerouted || c.arc || c.crash || toLine(c) < 0 || toLine(c) > 16) return
+  if (!roadSense || c.special || c.rerouted || c.arc || c.crash || toLine(c) < 0 || toLine(c) > 16) return
   if (c.turn === 'straight') {
     if (!armBlocked(cars, c.road, c.dir)) return
     c.rerouted = true
@@ -546,9 +583,9 @@ function reroute(c, cars) {
 
 // stuck behind a wreck: is there one ahead on my road (close enough that it is what the queue is waiting for), and am i held up by it?
 function stuckBehindWreck(c, cars) {
-  if (c.speed > 0.05 || Math.abs(c.t) < 5 || c.passing || c.turn !== 'straight') return false
+  if (c.special || c.speed > 0.05 || Math.abs(c.t) < 5 || c.passing || c.turn !== 'straight') return false
   let wreck = false
-  for (const o of cars) if (o !== c && o.active && o.crash && o.road === c.road && (o.t - c.t) * c.dir > 0 && (o.t - c.t) * c.dir < 16) wreck = true
+  for (const o of cars) if (o !== c && o.active && o.crash && o.road === c.road && (o.t - c.t) * c.dir > 0 && (o.t - c.t) * c.dir < 16 && (o.crash.kind !== 'hit' || Math.abs(o.lat - c.lat) < c.hw + (o.hwe || o.hw) + 0.3)) wreck = true // (a car that is up on the footpath, after it hit somebody, does not block my lane)
   return wreck && followLimit(c, cars, CAR) < 0.4
 }
 
@@ -575,7 +612,7 @@ function stepCar(c, cars, walkers, tr, dt) {
   if (c.stuck > 1.5 && tryUTurn(c, cars, walkers, tr.sig, dt)) return
   const sig = tr.sig
   updatePass(c, cars, CAR, (plan) => {
-    if (c.turn !== 'straight') return false // a car that is about to turn does not overtake
+    if (c.turn !== 'straight' || c.park) return false // a car that is about to turn, or is on its way to park, does not overtake
     const onCrossroad = plan.end > -STOP - 0.3 && plan.start < BOX + 0.3
     if (!onCrossroad) return true
     const o = other(c.axis)
@@ -586,6 +623,12 @@ function stepCar(c, cars, walkers, tr, dt) {
 
   let lim = c.passing ? c.base * CAR.boost : c.base
   lim = Math.min(lim, followLimit(c, cars, CAR))
+  if (c.park) { // stop at the place it was sent to, and stay until it is released
+    const d = (c.park.t - c.t) * c.dir - c.hl
+    lim = Math.min(lim, brake(Math.max(0, d), CAR.brake))
+    if (d < 0.3 && c.speed < 0.08) c.park.at = true
+    if (c.park.at) c.still = 0
+  }
   if (c.waitMerge) lim = Math.min(lim, brake(Math.max(0, homeGap(c, cars) - 0.8), CAR.brake)) // (out in the other lane, slowing down for whatever is stopped in mine)
 
   // (and a car that goes straight on does not start across the crossroad if a car is standing in its lane right beyond it: that would block the crossroad)
@@ -614,7 +657,7 @@ function stepCar(c, cars, walkers, tr, dt) {
   if (c.turn !== 'straight' && pos(c) >= -BOX) { // its middle is at the edge of the crossroad: into the curve
     if (mayTurn) { c.arc = turnArc(c); placeOnArc(c) } else { c.t = -c.dir * BOX - c.dir * 0.01; c.speed = 0 }
   }
-  if (pos(c) - c.hl > CAR.edge + reach || c.still > 25) { c.active = false; c.passing = null }
+  if (pos(c) - c.hl > CAR.edge + reach || (c.still > 25 && !c.special)) { c.active = false; c.passing = null } // (an emergency vehicle waits for as long as it is needed)
 }
 
 // room for a car at its spot: nobody close in the same lane, nobody overtaking into it
@@ -630,7 +673,7 @@ function roomFor(c, cars) {
 
 // put one car from the pool on the road: at the far end, or (for the first few) somewhere in the middle
 export function spawnCar(cars, rng, anywhere = false, prefer = null) { // prefer: { axis } brings the cars onto that road (the street where something is about to happen)
-  const free = cars.filter((c) => !c.active)
+  const free = cars.filter((c) => !c.active && !c.special)
   if (!free.length) return null
   const c = free[Math.floor(rng() * free.length)]
   const axis = prefer && prefer.axis ? prefer.axis : rng() > 0.5 ? 'x' : 'z'
@@ -649,7 +692,7 @@ export function spawnCar(cars, rng, anywhere = false, prefer = null) { // prefer
   const r = rng()
   let turn = passed || r < 0.7 ? 'straight' : r < 0.88 ? 'right' : 'left' // most go straight on, a few turn right, fewer turn left
   if (turn !== 'straight' && (c.hl >= 1.8 || !turnFits(c.hl, c.hw, turn).ok)) turn = 'straight' // a vehicle that would brush the pole or does not fit round the corner goes straight on
-  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null, waitMerge: false, yaw: 0, stuck: 0, backed: 0, hwe: 0, rerouted: false })
+  Object.assign(c, { active: true, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: dir * p, base: 2 + rng() * 1.6, passing: null, still: 0, turn, arc: null, crash: null, waitMerge: false, yaw: 0, stuck: 0, backed: 0, hwe: 0, rerouted: false, park: null })
   c.speed = c.base
   if (!roomFor(c, cars)) { c.active = false; return null }
   return c
@@ -737,6 +780,8 @@ function turnAround(w, lots) {
 }
 
 function stepWalker(w, walkers, cars, tr, dt) {
+  if (!w.active) return // (somebody who is not on the street: an onlooker who has not come yet, or has left)
+  if (w.down) { w.speed = 0; w.still = 0; w.waiting = false; w.crossing = false; return } // (somebody who was hit lies where they are)
   setLane(w, tr.lots)
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far + reach && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
@@ -744,8 +789,14 @@ function stepWalker(w, walkers, cars, tr, dt) {
   // somebody standing in my way (the drivers of a bump fighting on the footpath): i stop in front of them, and after a moment i turn round and go the other way
   const stop = tr.blockers.length ? followLimit(w, tr.blockers, WALK) : Infinity
   lim = Math.min(lim, stop)
+  if (w.watch) { // an onlooker walks to the spot where they will stand and watch, and stays there
+    const d = (w.watch.t - w.t) * w.dir
+    lim = Math.min(lim, d < 0 ? 0 : brake(d, WALK.brake))
+    if (d < 0.08 && w.speed < 0.08) w.watch.at = true
+    if (w.watch.at) { w.still = 0; w.blocked = 0 }
+  }
   w.blocked = stop < 0.05 ? (w.blocked || 0) + dt : 0
-  if (w.blocked > 1.5) { w.blocked = 0; turnAround(w, tr.lots); return }
+  if (w.blocked > 1.5 && !w.watch) { w.blocked = 0; turnAround(w, tr.lots); return }
   for (const c of cars) { // a car on my crossing (or sweeping round a curve): i hold still if it is about to reach me
     if (!c.active) continue
     const room = c.arc ? 0.1 : 0 // a curve sweeps wide so it gets a margin, a car just standing there does not (people walk right past it on the pavement)
@@ -755,7 +806,36 @@ function stepWalker(w, walkers, cars, tr, dt) {
   slide(w, walkers, WALK, dt)
   w.t += w.dir * w.speed * dt
   w.still = w.speed < 0.03 && !w.waiting ? w.still + dt : 0
-  if (Math.abs(w.t) > WALK.edge + reach || w.still > 20) turnAround(w, tr.lots)
+  if (w.leaving && Math.abs(w.t) > WALK.edge + reach - 0.4) { w.active = false; w.leaving = false; return } // (an onlooker who walks off the end of the footpath is gone)
+  if (Math.abs(w.t) > WALK.edge + reach || (w.still > 20 && !w.watch)) turnAround(w, tr.lots)
+}
+
+// the traffic lets an emergency vehicle in from the end of the road: same lane and way as the car that crashed, it parks at 'spot' (its nose there)
+export function dispatchCar(c, cars, axis, lane, spot, special) {
+  const dir = axis === 'x' ? (lane > 0 ? 1 : -1) : (lane > 0 ? -1 : 1)
+  Object.assign(c, { active: true, special, axis, road: axis, lane, alt: -lane, lat: lane, goal: lane, dir, t: -dir * (CAR.edge + reach + c.hl), base: 3.4, passing: null, still: 0, turn: 'straight', arc: null, crash: null, waitMerge: false, yaw: 0, stuck: 0, backed: 0, hwe: 0, rerouted: false, park: { t: spot } })
+  c.speed = c.base
+  if (!roomFor(c, cars)) { c.active = false; return false }
+  return true
+}
+
+// an onlooker comes in from the end of the footpath on 'side' of the road 'axis' and walks to 'spot', and watches from there
+export function sendWatcher(w, walkers, axis, side, spot) {
+  const way = spot === null ? Math.sign(w.t) || 1 : Math.sign(spot) // (no spot: somebody walks back on to the street from the end of the footpath they were taken from)
+  const end = way * (WALK.edge + reach - 0.6)
+  if (walkers.some((o) => o !== w && o.active && o.axis === axis && o.side === side && Math.abs(o.t - end) < 1.8)) return false // somebody is at the end of the footpath: not yet
+  Object.assign(w, { axis, side, road: axis + side, dir: -way, t: end, speed: w.base, passing: null, crossing: false, inPlaza: false, waiting: false, still: 0, blocked: 0, watch: spot === null ? null : { t: spot, at: false }, leaving: false, down: false, hitBy: null })
+  setLane(w, [])
+  w.lat = w.lane
+  w.active = true
+  return true
+}
+
+// the onlooker is done watching: walks off the way they came
+export function releaseWatcher(w, lots) {
+  w.watch = null
+  w.leaving = true
+  if (w.dir !== Math.sign(w.t)) turnAround(w, lots)
 }
 
 // ---------- one step for everybody ----------

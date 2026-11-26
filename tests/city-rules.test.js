@@ -60,7 +60,7 @@ describe('trees around a county', () => {
   })
 })
 
-import { roadTaken, ROAD_TAKEN_MAX, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS } from '../src/cityRules.js'
+import { roadTaken, ROAD_TAKEN_MAX, accidentWeights, pickLot, accidentChance, fightGoesOn, MAX_ACCIDENTS, accidentIsDue, ACCIDENT_EVERY_MS } from '../src/cityRules.js'
 
 describe('the road in front of a county', () => {
   it('stays full width for an empty county and gets narrower with every floor, but never closes', () => {
@@ -182,5 +182,26 @@ describe('where the fights are allowed (ten days to understand where the money g
 
   it('copes with junk', () => {
     expect(() => assessSpending([{ countyId: 'x', amount: 5, currency: 'EUR', ts: NaN }, e('misc', 5, 12)], counties, 'EUR', now)).not.toThrow()
+  })
+})
+
+describe('an accident every four hours', () => {
+  const H = 60 * 60 * 1000
+  it('is six a day: one four hours after the last, not before', () => {
+    expect(ACCIDENT_EVERY_MS).toBe(4 * H)
+    expect(24 * H / ACCIDENT_EVERY_MS).toBe(6)
+    const now = 1_000 * H
+    expect(accidentIsDue(now, now - 3.99 * H, 50)).toBe(false)
+    expect(accidentIsDue(now, now - 4 * H, 50)).toBe(true)
+    expect(accidentIsDue(now, now - 9 * H, 50)).toBe(true)
+  })
+  it('the first one comes as soon as the street is ready, and a clock that was set back does not stop them for ever', () => {
+    expect(accidentIsDue(5 * H, 0, 10)).toBe(true)
+    expect(accidentIsDue(5 * H, 50 * H, 10)).toBe(true)
+  })
+  it('they stop when the county has no spending this month', () => {
+    expect(accidentIsDue(100 * H, 0, 0)).toBe(false)
+    expect(accidentIsDue(100 * H, 10 * H, -3)).toBe(false)
+    expect(accidentIsDue(100 * H, 10 * H, 0.01)).toBe(true)
   })
 })
