@@ -94,10 +94,11 @@ export function assessSpending(expenses, counties, currency, now = Date.now()) {
   return { ready: true, top }
 }
 
-// an accident every four hours (so six in a day) for as long as the top county still has spending this month
-export const ACCIDENT_EVERY_MS = 4 * 60 * 60 * 1000
+// an accident as soon as the app is opened (once the street is ready), then one every hour for as long as the app stays open,
+// and only while the top county still has spending this month
+export const ACCIDENT_EVERY_MS = 60 * 60 * 1000
 export function accidentIsDue(now, last, spent) {
   if (!fightGoesOn(spent)) return false
-  if (!last || last > now) return true // never had one (or the clock was set back): the first is due as soon as the street is ready
+  if (!last || last > now) return true // none yet since the app was opened (or the clock was set back)
   return now - last >= ACCIDENT_EVERY_MS
 }

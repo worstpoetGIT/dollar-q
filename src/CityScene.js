@@ -324,6 +324,7 @@ export class CityScene {
     this.rng = mulberry(7)
     this.accident = null // the one that is happening: a car that hit somebody on the footpath, and everything that follows
     this.accClock = 0
+    this.lastAcc = 0 // when the last accident started (0 every time the app is opened: one is due at once, and then one every hour for as long as the app stays open)
     this.assess = { ready: false, top: null } // where the money goes, from the last ten days (set by setCounties)
     this.hunt = null // while one is due: { lot, until }, more traffic is sent down that county's street
     this.odds = [] // for every lot: how much is spent in its county, its group and level (what decides where accidents happen)
@@ -840,14 +841,6 @@ export class CityScene {
     return accidentWeights(only, this.lots.map((l) => !!l.road))
   }
 
-  lastAccident() {
-    try { return Number(localStorage.getItem('dq-accident-at')) || 0 } catch { return 0 }
-  }
-
-  saveAccident() {
-    try { localStorage.setItem('dq-accident-at', String(Date.now())) } catch { /* the private window: it will come again at the next start */ }
-  }
-
   // which street, if one is due: the top county, while it has spending, and four hours after the last
   accidentLot() {
     const a = this.assess || { ready: false, top: null }
@@ -857,7 +850,7 @@ export class CityScene {
     if (k < 0) return -1
     const spent = this.odds[k].spent
     if (demo) return fightGoesOn(spent) && Date.now() - (this.lastDemo || 0) > 60000 ? k : -1
-    return accidentIsDue(Date.now(), this.lastAccident(), spent) ? k : -1
+    return accidentIsDue(Date.now(), this.lastAcc, spent) ? k : -1 // (this.lastAcc starts at 0 every time the app is opened: the first one is due at once)
   }
 
   // a car that is on its way out of the crossroad and somebody walking the footpath ahead of it on its own side of the road
@@ -868,14 +861,14 @@ export class CityScene {
     for (const c of this.cars) {
       if (!c.active || c.special || c.crash || c.passing || c.arc || c.waitMerge || c.road !== r.axis || c.turn !== 'straight' || Math.abs(c.lat - c.lane) > 0.1 || c.dir * c.t < 2.2) continue
       for (const w of this.walkers) {
-        if (!w.active || w.down || w.watch || w.axis !== r.axis || w.waiting || w.crossing || w.inPlaza || Math.sign(w.lat) !== Math.sign(c.lat) || Math.abs(w.lat) < 1.95 || Math.sign(w.t) !== Math.sign(c.t)) continue // (the outer lane: the car goes up on the footpath, clear of the road and of the ambulance's lane)
+        if (!w.active || w.down || w.watch || w.axis !== r.axis || w.waiting || w.crossing || w.inPlaza || Math.sign(w.lat) !== Math.sign(c.lat) || Math.abs(w.lat) < 1.6 || Math.abs(w.lat - w.lane) > 0.03 || Math.abs(w.goal - w.lane) > 0.03 || w.passing || Math.sign(w.t) !== Math.sign(c.t)) continue // (the outer lane: the car goes up on the footpath, clear of the road and of the ambulance's lane)
         const gap = (w.t - c.t) * c.dir
         const away = Math.abs(w.t)
         if (this.walkers.some((o) => o !== w && o.active && o.axis === w.axis && o.side === w.side && Math.abs(o.t - w.t) < 3.5)) continue // (nobody else close to them)
         const from = c.t - c.dir * (c.hl + 1.5), to = w.t + c.dir * 1.5 // (the stretch of footpath the car will sweep over)
         if (this.walkers.some((o) => o !== w && o.active && o.axis === w.axis && o.side === w.side && (o.t - from) * (o.t - to) <= 0)) continue
         const out = w.dir === Math.sign(w.t) // (walking out towards the end of the footpath: they will be about three further out when the car reaches them)
-        if (gap < 3.5 || gap > 10 || away < 4.4 || away + (out ? 3.2 : 0) > Math.min(cap - 1.5, 11.6) || Math.abs(w.t - r.along) > 12) continue
+        if (gap < 5.5 || gap > 11 || away < 4.4 || away + (out ? 3.2 : 0) > Math.min(cap - 1.5, 11.6) || Math.abs(w.t - r.along) > 12) continue
         pairs.push({ c, w })
       }
     }
@@ -892,10 +885,12 @@ export class CityScene {
     const k = this.hunt ? this.hunt.lot : this.accidentLot()
     if (k < 0) { this.hunt = null; return false }
     if (!this.hunt) this.hunt = { lot: k, until: now + 60000 }
+    const before = { acc: this.lastAcc, demo: this.lastDemo }
     if (this.tryAccident(k)) {
       this.hunt = null
+      this.accident.before = before // (an accident that is called off does not count)
       if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('fights')) this.lastDemo = Date.now()
-      else this.saveAccident()
+      else this.lastAcc = Date.now()
       return true
     }
     return false
@@ -920,11 +915,15 @@ export class CityScene {
   }
 
   // a person walks from point to point (at a walking pace, turning to face the way they go)
-  walkActor(a, dt) {
+  walkActor(a, dt, A = null) {
     if (a.manual) return true // (carried along by the code that lifts the patient)
     const pt = a.pts[0]
     if (!pt) { a.moving = false; return true }
-    const dx = pt[0] - a.x, dz = pt[1] - a.z, d = Math.hypot(dx, dz), len = 1.1 * dt
+    const dx = pt[0] - a.x, dz = pt[1] - a.z, d = Math.hypot(dx, dz), len = 1.4 * dt
+    if (A && d > 1e-6) { // somebody just walking by is in the way: wait a moment for them to go on (never for long)
+      const [nt, nl] = this.tOf(A, a.x + (dx / d) * Math.min(d, 0.5), a.z + (dz / d) * Math.min(d, 0.5))
+      if ((a.pause || 0) < 4 && this.walkers.some((w) => w.active && w.axis === A.axis && !w.down && w !== A.vic && !this.watchers.includes(w) && Math.abs(w.t - nt) < 0.5 && Math.abs(w.lat - nl) < 0.5)) { a.pause = (a.pause || 0) + dt; a.moving = false; return false }
+    }
     const want = Math.atan2(dx, dz)
     const turn = Math.atan2(Math.sin(want - a.yaw), Math.cos(want - a.yaw))
     a.yaw += Math.max(-dt * 7, Math.min(dt * 7, turn))
@@ -974,6 +973,7 @@ export class CityScene {
 
   accidentBegins(A) {
     const { car, vic } = A
+    if (Math.abs(car.lat) - (car.hwe || car.hw) < 1.3) { this.accidentAbort(A); return } // the car did not get properly up on the footpath, it would block the road: not this time
     A.phase = 'scene'
     A.t0 = A.t
     A.lie = { t: vic.t, lat: A.s * Math.max(Math.abs(vic.lat), 1.85) } // the one who was hit lies across the footpath (the middle of the body here), head to the outside
@@ -984,8 +984,8 @@ export class CityScene {
       const s = Math.abs(vic.t) + 1.3 + 0.9 * i
       if (s <= 13.2 + (this.E - 15) - 1.2) spots.push(Math.sign(vic.t) * s)
     }
-    A.watchers = spots.map((spot, i) => ({ w: this.watchers[i], spot, at: 1.5 + i * 1.5, sent: false }))
-    A.retry = { amb: 0.8, pol: 3.2 }
+    A.watchers = spots.map((spot, i) => ({ w: this.watchers[i], spot, at: 1.5 + i * 1.5, sent: false })).filter((o) => o.w && !o.w.active) // (one who is still on their way out from the last time stays out of it)
+    A.retry = { amb: 0.5, pol: 1.5 }
   }
 
   updateAccident(dt) {
@@ -994,7 +994,7 @@ export class CityScene {
     A.t += dt
     const { car, vic } = A
     if (A.phase === 'hit') {
-      if (car.crash && car.crash.hit) this.accidentBegins(A)
+      if (car.crash && car.crash.stopped) this.accidentBegins(A)
       else if (A.t > 14 || !car.active) this.accidentAbort(A)
       return
     }
@@ -1085,14 +1085,14 @@ export class CityScene {
     // clear: when both have driven off, the car that waited all this time drives off the footpath, and then the onlookers go
     if (A.amb && A.pol && A.amb.stage === 'gone' && A.pol.stage === 'gone' && !A.carFree) { A.carFree = true; endCrash(car) }
     if (A.carFree && !A.cleared && (!car.active || Math.abs(car.lat - car.lane) < 0.3)) this.accidentClears(A)
-    if (tt > 120 && !A.forced) { // nothing may hang about for ever
+    if (tt > 50 && !A.forced) { // nothing may hang about: after 50 seconds everybody is sent on their way (and it is all over a few seconds later, inside the 70)
       A.forced = true
       if (A.amb) A.amb.car.park = null
       if (A.pol) A.pol.car.park = null
-      if (!A.carFree) { A.carFree = true; endCrash(car) }
       this.accidentClears(A)
     }
-    if (A.cleared && A.watchers.every((o) => !o.sent || !o.w.active) && (!A.amb || A.amb.stage === 'gone' || A.forced) && (!A.pol || A.pol.stage === 'gone' || A.forced)) this.accidentEnds(A)
+    if (tt > 62 && !A.carFree) { A.carFree = true; endCrash(car) } // (the car waits for the police and the ambulance to be gone: only if they are still here after 62 seconds does it go anyway)
+    if (A.cleared && (A.watchers.every((o) => !o.sent || !o.w.active) || tt > 64) && (!A.amb || A.amb.stage === 'gone' || tt > 64) && (!A.pol || A.pol.stage === 'gone' || tt > 64)) this.accidentEnds(A)
   }
 
   accidentClears(A) {
@@ -1111,6 +1111,7 @@ export class CityScene {
   }
 
   accidentAbort(A) {
+    if (A.before) { this.lastAcc = A.before.acc; this.lastDemo = A.before.demo }
     endCrash(A.car)
     A.vic.down = false; A.vic.hitBy = null; A.vic.p.rotation.set(0, 0, 0)
     this.accident = null
@@ -1122,12 +1123,17 @@ export class CityScene {
     this.restoring = this.restoring.filter((w) => !sendWatcher(w, this.walkers, w.axis, w.side, null)) // those who were taken away walk back on to the street, when there is room
     if (A && A.phase === 'hit') { this.traffic.blockers = [{ active: true, road: A.axis + A.s, t: A.car.t + A.dir * A.car.hl * 0.5, lat: A.car.lat, goal: A.car.lat, hw: (A.car.hwe || A.car.hw) + 0.3, hl: A.car.hl + 1.2, dir: 0, speed: 0 }]; return } // (people keep clear of a car that has lost control)
     if (!A) { this.traffic.blockers = []; return }
-    for (const a of A.actors) { this.walkActor(a, dt); this.showActor(a, dt) }
+    for (const a of A.actors) { this.walkActor(a, dt, A); this.showActor(a, dt) }
     const mk2 = (x, z, hw, hl) => { const [t, lat] = this.tOf(A, x, z); return { active: true, road: A.axis + Math.sign(A.lie.lat), t, lat, goal: lat, hw, hl, dir: 0, speed: 0 } }
     const list = []
     if (!A.carFree) list.push({ active: true, road: A.axis + A.s, t: A.car.t, lat: A.car.lat, goal: A.car.lat, hw: A.car.hwe || A.car.hw, hl: A.car.hl, dir: 0, speed: 0 })
     if (!A.lifted) list.push({ active: true, road: A.axis + A.s, t: A.lie.t, lat: A.lie.lat, goal: A.lie.lat, hw: 0.6, hl: 0.3, dir: 0, speed: 0 })
     for (const a of A.actors) if (!a.hidden) list.push(mk2(a.x, a.z, 0.25, 0.25))
+    // the whole stretch of footpath where it happens is closed: from the back of the police car to the front of the ambulance. people come up to it and wait (or turn back), nobody walks in among the people of the accident
+    let lo = Math.min(A.car.t - A.car.hl, A.lie.t), hi = Math.max(A.car.t + A.car.hl, A.lie.t)
+    for (const e of [A.amb, A.pol]) if (e && e.car.active) { lo = Math.min(lo, e.car.t - e.car.hl); hi = Math.max(hi, e.car.t + e.car.hl) }
+    lo -= 0.5; hi += 0.5
+    list.push({ active: true, road: A.axis + A.s, t: (lo + hi) / 2, lat: A.s * 1.95, goal: A.s * 1.95, hw: 1.0, hl: (hi - lo) / 2, dir: 0, speed: 0 })
     this.traffic.blockers = list
   }
 
@@ -2151,8 +2157,10 @@ export class CityScene {
     this.spawnIn -= dt
     if (this.spawnIn <= 0) {
       const hunt = this.hunt && this.lots[this.hunt.lot].road // a crash is due on this street: more cars come down it
-      this.spawnIn = hunt ? 0.9 + this.rng() * 0.9 : 2.6 + this.rng() * 3
-      this.spawnVehicle(false, hunt ? { axis: hunt.axis } : null)
+      this.spawnIn = hunt ? 1.2 + this.rng() * 1.2 : 2.6 + this.rng() * 3
+      // (while an accident is waited for there is more traffic, but both roads get the same: the cars go down the two roads in turn)
+      this.huntFlip = !this.huntFlip
+      this.spawnVehicle(false, hunt ? { axis: this.huntFlip ? hunt.axis : hunt.axis === 'x' ? 'z' : 'x' } : null)
     }
     for (const c of this.cars) {
       c.car.visible = c.active

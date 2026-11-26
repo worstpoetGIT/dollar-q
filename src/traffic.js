@@ -72,7 +72,7 @@ export function startCrash(a, b, kind = 'rear') {
 
 // the driver loses control on the narrowed road: the car steers off the road, up on to the pavement, at somebody walking there, and hits them
 export function startHit(car, walker, toward) {
-  car.crash = { role: 'driver', kind: 'hit', other: walker, hit: false, t: 0, toward }
+  car.crash = { role: 'driver', kind: 'hit', other: walker, hit: false, stopped: false, run: 0, t: 0, toward }
   car.passing = null; car.turn = 'straight'; car.yaw = 0
   walker.hitBy = car
 }
@@ -82,23 +82,34 @@ function stepHit(c, k, dt) {
   k.t += dt
   c.still = 0
   c.goal = c.lat // (it is where it is on the footpath: for the traffic behind it, it is not in the lane any more)
-  if (k.hit) { c.speed = 0; return }
-  const grow = Math.min(1, k.t / 0.9)
-  const left = Math.min(1, Math.abs(w.lat - c.lat) / 0.45) // (how much of the way to the person's path is left)
-  c.yaw = yawFor(c, k.toward) * 0.36 * grow * left
-  c.speed += (Math.max(c.base, 2.4) - c.speed) * Math.min(1, 2 * dt)
   const lat = c.axis === 'x' ? -c.dir : c.dir
+  if (k.hit) { // after the hit the car rolls on, further up on to the footpath, and the person is knocked on ahead of it; then it stops
+    if (k.stopped) { c.speed = 0; return }
+    k.run += dt
+    const rest = 2.05 - Math.abs(c.lat) // how far it still has to go to be properly up on the footpath (whichever lane the person was in)
+    c.yaw = yawFor(c, k.toward) * 0.45 * Math.max(0, Math.min(1, rest / 0.45))
+    c.speed = Math.max(0, c.speed - 2.2 * dt)
+    c.t += c.dir * Math.cos(c.yaw) * c.speed * dt
+    c.lat += lat * Math.sin(c.yaw) * c.speed * dt
+    c.hwe = sideReach(c)
+    if (c.speed < 0.06 || k.run > 1.6) { c.speed = 0; c.yaw *= 0.5; c.hwe = sideReach(c); k.stopped = true } // (it comes to rest a little less crooked)
+    w.t = c.t + c.dir * (c.hl + w.hl + 0.05)
+    for (let i = 0; i < 120 && rectsTouch(rectOf(c), walkerRect(w, 0, 0.02)); i++) w.t += c.dir * 0.02 // (knocked on ahead of the nose, never inside the car however it is turned)
+    return
+  }
+  const grow = Math.min(1, k.t / 0.6)
+  const left = Math.min(1, Math.abs(w.lat - c.lat) / 0.45) // (how much of the way to the person's path is left)
+  c.yaw = yawFor(c, k.toward) * 0.45 * grow * left
+  c.speed += (Math.max(c.base, 2.4) - c.speed) * Math.min(1, 2 * dt)
   c.t += c.dir * Math.cos(c.yaw) * c.speed * dt
   c.lat += lat * Math.sin(c.yaw) * c.speed * dt
   c.hwe = sideReach(c)
-  if (rectsTouch(rectOf(c), walkerRect(w, 0, 0))) { // it reaches them: the car stops where it is, the person goes down
-    c.speed = 0
-    c.yaw *= 0.5 // it comes to rest a little less crooked than it hit (and then backs off until it only just touches)
-    for (let i = 0; i < 60 && rectsTouch(rectOf(c), walkerRect(w, 0, 0)); i++) { c.t -= c.dir * Math.cos(c.yaw) * 0.02; c.lat -= lat * Math.sin(c.yaw) * 0.02 }
-    c.hwe = sideReach(c)
+  if (rectsTouch(rectOf(c), walkerRect(w, 0, 0))) { // it reaches them: the person goes down
     k.hit = true
+    k.run = 0
     w.down = true
     w.speed = 0
+    for (let i = 0; i < 120 && rectsTouch(rectOf(c), walkerRect(w, 0, 0.02)); i++) w.t += c.dir * 0.02 // (knocked a little ahead at once)
   }
 }
 
@@ -339,6 +350,9 @@ function updateSignal(cars, walkers, tr, dt) {
   sig.age += dt
   if (sig.hold && (!sig.hold.active || !sig.hold.passing)) sig.hold = null
   sig.siren = !!siren
+  if (siren) { // the cars in front of the ambulance in its lane, that wanted to turn, go straight on: nobody holds it up waiting for an arrow or for people on a crossing
+    for (const o of cars) if (o !== siren && o.active && !o.crash && !o.arc && o.turn !== 'straight' && o.road === siren.road && o.dir === siren.dir && Math.abs(o.lat - siren.lat) < 0.6 && toLine(o) < toLine(siren) && toLine(o) > -2.5) o.turn = 'straight'
+  }
   const mine = siren && PHASES[here].axis === siren.axis && !PHASES[here].left // the siren is on the road that has the green
   if (sig.hold) sig.mode = 'green' // somebody is overtaking through the crossroad, nobody else goes now
   else if (siren && sig.mode === 'green') {
@@ -739,7 +753,7 @@ function postsOf(w) {
   return out
 }
 
-function setLane(w, lots) {
+function setLane(w, lots, others = null) {
   const ahead = w.t + w.dir * (w.hl + 0.9)
   const edge = Math.min(lineAt(w, lots, w.t), lineAt(w, lots, ahead), lineAt(w, lots, w.t - w.dir * (w.hl + 0.3)))
   const gap = Math.max(SPACING[0], Math.min(SPACING[1], edge - w.hw - LINE_GAP - INNER))
@@ -747,8 +761,13 @@ function setLane(w, lots) {
   w.lane = w.dir > 0 ? near : far
   w.alt = w.dir > 0 ? far : near
   // a lamp post is about to be in the way in my lane: i use the other lane while i go by it
-  const inTheWay = (lane) => postsOf(w).some((f) => (f.t - w.t) * w.dir > -(w.hl + 0.25) && (f.t - w.t) * w.dir < 1.4 && Math.abs(Math.abs(f.lat) - Math.abs(lane)) < w.hw + f.r + 0.04)
-  w.goal = w.passing || (inTheWay(w.lane) && !inTheWay(w.alt)) ? w.alt : w.lane
+  const inTheWay = (lane) => postsOf(w).some((f) => (f.t - w.t) * w.dir > -(w.hl + f.r - 0.02) && (f.t - w.t) * w.dir < 1.4 && Math.abs(Math.abs(f.lat) - Math.abs(lane)) < w.hw + f.r + 0.04)
+  // (and only when nobody is coming the other way in that lane: i wait in front of the post until they have gone by, so we never meet head on in the lane i stepped into)
+  const altFree = !others || !others.some((o) => o !== w && o.active && o.road === w.road && o.dir !== w.dir && Math.abs(o.lat - w.alt) < 0.6 && (o.t - w.t) * w.dir > -0.8 && (o.t - w.t) * w.dir < 5.2)
+  const inOther = Math.abs(w.lat - w.alt) < 0.3 // (already stepped over: once beside the post i go on past it, whoever comes)
+  // somebody coming the other way who had to step into my lane to get round a post: i move over to my other lane for a moment so we can go by each other
+  const makeWay = !!others && others.some((o) => o !== w && o.active && o.road === w.road && o.dir !== w.dir && Math.abs(o.lat - o.lane) > 0.3 && Math.abs(o.lat - w.lane) < 0.45 && (o.t - w.t) * w.dir > -0.5 && (o.t - w.t) * w.dir < 2.4)
+  w.goal = w.passing || makeWay && !inTheWay(w.alt) || (inTheWay(w.lane) && !inTheWay(w.alt) && (altFree || inOther)) ? w.alt : w.lane
 }
 
 // n people spread over the four footpaths along the roads
@@ -815,7 +834,7 @@ function stepWalker(w, walkers, cars, tr, dt) {
     return
   }
   if (w.down) { w.speed = 0; w.still = 0; w.waiting = false; w.crossing = false; return } // (somebody who was hit lies where they are)
-  setLane(w, tr.lots)
+  setLane(w, tr.lots, walkers)
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far + reach && (plan.start > WALK.zone || plan.end < -WALK.zone))
   let lim = w.passing ? w.base * WALK.boost : w.base
   lim = Math.min(lim, followLimit(w, walkers, WALK), plazaLimit(w, tr.sig, cars))

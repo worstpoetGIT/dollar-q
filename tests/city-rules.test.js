@@ -185,17 +185,16 @@ describe('where the fights are allowed (ten days to understand where the money g
   })
 })
 
-describe('an accident every four hours', () => {
+describe('an accident when the app is opened, then every hour', () => {
   const H = 60 * 60 * 1000
-  it('is six a day: one four hours after the last, not before', () => {
-    expect(ACCIDENT_EVERY_MS).toBe(4 * H)
-    expect(24 * H / ACCIDENT_EVERY_MS).toBe(6)
+  it('is one every hour while the app stays open: not before the hour is up', () => {
+    expect(ACCIDENT_EVERY_MS).toBe(H)
     const now = 1_000 * H
-    expect(accidentIsDue(now, now - 3.99 * H, 50)).toBe(false)
-    expect(accidentIsDue(now, now - 4 * H, 50)).toBe(true)
-    expect(accidentIsDue(now, now - 9 * H, 50)).toBe(true)
+    expect(accidentIsDue(now, now - 0.99 * H, 50)).toBe(false)
+    expect(accidentIsDue(now, now - H, 50)).toBe(true)
+    expect(accidentIsDue(now, now - 5 * H, 50)).toBe(true)
   })
-  it('the first one comes as soon as the street is ready, and a clock that was set back does not stop them for ever', () => {
+  it('the first one is due at once after the app is opened, and a clock that was set back does not stop them for ever', () => {
     expect(accidentIsDue(5 * H, 0, 10)).toBe(true)
     expect(accidentIsDue(5 * H, 50 * H, 10)).toBe(true)
   })

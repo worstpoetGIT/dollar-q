@@ -683,10 +683,18 @@ describe('traffic: people go round the lamp posts', () => {
       const cars = fleet('city')
       const tr = makeTraffic()
       const walkers = placeWalkers(8, rng)
-      let hits = 0, exits = 0
+      let hits = 0, exits = 0, turnBacks = 0, worst = 0
       const was = walkers.map((w) => w.active)
-      for (let step = 0; step < 150 * 30; step++) {
+      const dirs = walkers.map((w) => w.dir), still = walkers.map(() => 0)
+      const nearPost = (w) => posts.some((f) => { const lat = w.axis === 'x' ? f.z : f.x, tt = w.axis === 'x' ? f.x : f.z; return Math.sign(lat) === w.side && Math.abs(tt - w.t) < 1.8 })
+      for (let step = 0; step < 250 * 30; step++) {
         stepTraffic(cars, walkers, tr, 1 / 30)
+        walkers.forEach((w, i) => { // somebody who walks up to a post must go round it and on, not turn back or stand there
+          if (w.active && was[i] && w.dir !== dirs[i] && nearPost(w) && Math.abs(w.t) < 13) turnBacks++
+          dirs[i] = w.dir
+          still[i] = w.active && w.speed < 0.05 && !w.waiting && nearPost(w) ? still[i] + 1 / 30 : 0
+          worst = Math.max(worst, still[i])
+        })
         for (const w of walkers) {
           if (!w.active) continue
           for (const f of posts) {
@@ -698,6 +706,8 @@ describe('traffic: people go round the lamp posts', () => {
       }
       expect(hits).toBe(0)
       expect(exits).toBeGreaterThan(2)
+      expect(turnBacks).toBe(0) // they step round the pole and walk on where they were going
+      expect(worst).toBeLessThan(8) // at worst they wait a moment for somebody coming the other way
     }
     setObstacles([])
   }, 60000)
