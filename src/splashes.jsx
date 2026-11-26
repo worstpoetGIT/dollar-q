@@ -34,10 +34,10 @@ function City({ go }) {
 /* ---------- Lego: bricks fall one by one and build the letters ---------- */
 const LD = ['..#..', '.####', '#.#..', '.###.', '..#.#', '####.', '..#..']
 const LQ = ['.##.', '#..#', '...#', '..#.', '.#..', '....', '.#..']
-function Brick({ x, y, w, c, dk, lt, delay, rot }) {
+function Brick({ x, y, w, c, dk, lt, delay }) { // (built in place: pressed down onto the brick below with a small click, not dropped from above)
   const cx = x + w / 2
   return (
-    <g className="sp-drop" style={{ '--delay': delay + 's', '--rot': rot + 'deg' }}>
+    <g className="sp-snap" style={{ '--delay': delay + 's' }}>
       <rect x={x} y={y + 9} width={w} height="14" rx="2" fill={dk} />
       <rect x={x} y={y + 5} width={w} height="14" fill={c} />
       <rect x={x} y={y} width={w} height="8" rx="2" fill={lt} />
@@ -52,8 +52,8 @@ const legoBricks = () => {
   const out = []
   const cw = 22, rh = 21, oy = 34
   ;[[LD, 6, '#ffd500', '#b39400', '#ffe55c', 0], [LQ, 138, '#e3000b', '#8f0007', '#ff5a62', 0.25]].forEach(([m, x0, c, dk, lt, off]) =>
-    m.forEach((row, r) => [...row].forEach((ch, i) => { if (ch === '#') out.push({ x: x0 + i * cw, y: oy + r * rh, w: cw, c, dk, lt, delay: +(0.1 + off + r * 0.22 + i * 0.035).toFixed(2), rot: (r + i) % 2 ? 10 : -10 }) })))
-  ;[[60, '#fff', '#b5b5b5', '#fff'], [98, '#0057b8', '#003a7a', '#3b86e8'], [136, '#fff', '#b5b5b5', '#fff']].forEach(([x, c, dk, lt], k) => out.push({ x, y: 196, w: 34, c, dk, lt, delay: 2.0 + k * 0.18, rot: 0 }))
+    m.forEach((row, r) => [...row].forEach((ch, i) => { if (ch === '#') out.push({ x: x0 + i * cw, y: oy + r * rh, w: cw, c, dk, lt, delay: +(0.75 + off + (6 - r) * 0.26 + i * 0.045).toFixed(2) }) }))) // (the letters grow from the bottom row up, like a build)
+  ;[[60, '#fff', '#b5b5b5', '#fff'], [98, '#0057b8', '#003a7a', '#3b86e8'], [136, '#fff', '#b5b5b5', '#fff']].forEach(([x, c, dk, lt], k) => out.push({ x, y: 196, w: 34, c, dk, lt, delay: +(0.1 + k * 0.2).toFixed(2) })) // (the three base bricks are laid first)
   return out
 }
 const LEGO_BRICKS = legoBricks()

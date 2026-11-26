@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { splashFor, SPLASH_MS } from '../splashes.jsx'
-import { startPencil } from '../pencil.js'
+import { startPencil, preloadPencil } from '../pencil.js'
+
+preloadPencil() // (the recording is fetched as soon as the app loads)
 
 // the opening splash of the map in use: the $ and ? drawn in that map's way, with the sound of a pencil on paper until it is done
 export default function Splash({ map = 'city', onDone, sound = true }) {
