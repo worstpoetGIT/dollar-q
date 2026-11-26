@@ -34,6 +34,15 @@ export const DEFAULT_COUNTIES = [
   county('Gifts', 'Gulliver', 'shop', 11, 'tag'),
 ]
 
+// Gulliver (rent, investments, gifts, banking) came after the first versions, so the counties that people already have were saved in other groups.
+// when nobody has a county in the Gulliver group yet, the counties with those names move into it. pure: it hands back the same list when there is nothing to do.
+const GULLIVER_WORDS = /\b(rents?|investments?|investing|banking|bank|gifts?)\b/i
+export function withGulliver(counties) {
+  if (counties.some((c) => c.group === 'Gulliver')) return counties
+  if (!counties.some((c) => GULLIVER_WORDS.test(c.name))) return counties
+  return counties.map((c) => (GULLIVER_WORDS.test(c.name) ? { ...c, group: 'Gulliver' } : c))
+}
+
 const initial = () => ({
   v: 1,
   entered: false,
@@ -241,6 +250,20 @@ export async function startDatabase(open) {
 // resolves when the database is open (or we know there is none). things that write, like the monthly subscriptions, wait for it.
 export const ready = restored.then(() => startDatabase(openNativeDb))
 export const getDb = () => db
+
+// once, on the first start after this came in: put the counties that belong in Gulliver into it (see withGulliver). only for an app that is set up already;
+// a new app gets the right groups from the defaults. the answer is remembered, so a person who moves them out again is left alone.
+const GULLIVER_KEY = KEY + ':gulliver-moved'
+export function moveToGulliver() {
+  try { if (localStorage.getItem(GULLIVER_KEY) === '1') return false } catch { /* ignore */ }
+  if (!state.entered) return false
+  const next = withGulliver(state.counties)
+  try { localStorage.setItem(GULLIVER_KEY, '1') } catch { /* ignore */ }
+  if (next === state.counties) return false
+  setState((st) => ({ ...st, counties: withGulliver(st.counties) }))
+  return true
+}
+ready.then(() => moveToGulliver())
 export const flushDatabase = () => writes // resolves when every change so far is in the database
 
 // ---------- what sync does to the state ----------
