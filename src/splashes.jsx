@@ -87,7 +87,7 @@ function Japan({ go }) {
 /* ---------- Wireframe: pencil sketch on dotted paper, in the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes) ---------- */
 const PAPER = '#f4f3ef', PENCIL = '#1f2340', RED = '#d8232a'
 function Wire({ go }) {
-  const Black = ({ d, dur, delay }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={PENCIL} strokeWidth="26" />
+  const Black = ({ d, dur, delay, color = PENCIL }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={color} strokeWidth="26" />
   const Paper = ({ d, dur, delay }) => <Draw go={go} d={d} dur={dur} delay={delay} stroke={PAPER} strokeWidth="20" />
   return (
     <svg viewBox="0 0 240 240" aria-label="$?">
@@ -99,10 +99,10 @@ function Wire({ go }) {
           <Black d={Q} dur=".85" delay="0.1" />
           <Paper d={Q} dur=".85" delay="0.1" />
           <Circ go={go} cx="158" cy="154" r="14" dur=".5" delay="1.0" stroke={RED} strokeWidth="5" />
-          {/* the $ is two strokes: all the pencil lines go down first and all the paper over them after, so the two strokes join into one outlined letter (as in the icon) */}
+          {/* the $ is two strokes: all the pencil lines go down first and all the paper over them after, so the two strokes join into one outlined letter (as in the icon); the bar is drawn in red, like the dot */}
           <g transform="translate(-4 4)">
             <Black d={S1} dur="1.1" delay="1.1" />
-            <Black d={S2} dur=".5" delay="2.1" />
+            <Black d={S2} dur=".5" delay="2.1" color={RED} />
             <Paper d={S1} dur="1.1" delay="1.1" />
             <Paper d={S2} dur=".5" delay="2.1" />
           </g>
