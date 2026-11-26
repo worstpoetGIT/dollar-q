@@ -21,12 +21,14 @@ const WALK = { brake: 2.2, accel: 1.4, hard: 4, gap: 0.3, side: 0, squeeze: 0.52
 // further out while it is small, so a small lot leaves more room. people keep to two lanes and never stand on a line.
 export const LOT_HALF = 2.45
 export const LOT_SMALL = 0.85 // a lot size to assume when there is no lot to look at (1 is fully grown)
+export const LOT_FULL = 0.96 // the biggest a lot gets: the footpath beside it keeps a clear strip between the people and the house
 
 // how big a lot is for a county of this level. an empty lot is small, it grows quickly with the first expenses and then
 // slower, and gets close to 1 only for a county with a lot of spending. so the more spent, the thinner the footpath beside it.
-export const lotSize = (level) => Math.min(1, 0.55 + 0.45 * (1 - Math.exp(-Math.max(0, level) / 10)))
+export const lotSize = (level) => Math.min(LOT_FULL, 0.55 + 0.45 * (1 - Math.exp(-Math.max(0, level) / 10)))
 const LOT_MIDDLE = 4.9
-const INNER = 1.68 // the lane next to the road
+const INNER = 1.67 // the lane next to the road
+const LINE_GAP = 0.1 // people keep this far from the line round a lot (never on the edge of the house)
 const SPACING = [0.528, 1.1] // how far the second lane is from the first: least (a big lot squeezes the footpath) and most (an empty or tiny lot leaves lots of room)
 export const LANES = [INNER, INNER + SPACING[0]]
 
@@ -90,9 +92,9 @@ function stepHit(c, k, dt) {
   c.lat += lat * Math.sin(c.yaw) * c.speed * dt
   c.hwe = sideReach(c)
   if (rectsTouch(rectOf(c), walkerRect(w, 0, 0))) { // it reaches them: the car stops where it is, the person goes down
-    for (let i = 0; i < 40 && rectsTouch(rectOf(c), walkerRect(w, 0, 0)); i++) { c.t -= c.dir * Math.cos(c.yaw) * 0.02; c.lat -= lat * Math.sin(c.yaw) * 0.02 }
     c.speed = 0
-    c.yaw *= 0.5
+    c.yaw *= 0.5 // it comes to rest a little less crooked than it hit (and then backs off until it only just touches)
+    for (let i = 0; i < 60 && rectsTouch(rectOf(c), walkerRect(w, 0, 0)); i++) { c.t -= c.dir * Math.cos(c.yaw) * 0.02; c.lat -= lat * Math.sin(c.yaw) * 0.02 }
     c.hwe = sideReach(c)
     k.hit = true
     w.down = true
@@ -180,9 +182,11 @@ function followLimit(m, movers, cfg) {
   let lim = Infinity
   for (const o of movers) {
     if (o === m || !o.active || o.road !== m.road) continue
-    const ahead = (o.t - m.t) * m.dir
+    let ot = o.t, olat = o.lat
+    if (o.arc && o.arc.kind === 'u') { const p = carPose(o); ot = m.axis === 'x' ? p.x : p.z; olat = m.axis === 'x' ? p.z : p.x } // (a car swinging round across the road is where its body is, not where its lane is)
+    const ahead = (ot - m.t) * m.dir
     if (ahead <= 0) continue
-    if (Math.min(Math.abs(o.lat - m.lat), Math.abs(o.goal - m.lat)) >= (m.hwe || m.hw) + (o.hwe || o.hw) + cfg.side) continue
+    if (Math.min(Math.abs(olat - m.lat), o.arc ? Infinity : Math.abs(o.goal - m.lat)) >= (m.hwe || m.hw) + (o.hwe || o.hw) + cfg.side) continue
     const gap = ahead - m.hl - o.hl - cfg.gap
     if (o.dir === m.dir) lim = Math.min(lim, brake(gap, cfg.brake))
     else if (o.passing && !m.passing) lim = Math.min(lim, Math.sqrt(o.speed * o.speed + 2 * cfg.brake * Math.max(0, gap)) - o.speed) // somebody overtaking comes at me: i give way
@@ -310,8 +314,10 @@ const leftKey = (axis, dir) => axis + (dir > 0 ? '+' : '-')
 
 function updateSignal(cars, walkers, tr, dt) {
   const busy = { x: 0, z: 0 }, want = { x: false, z: false }, wantLeft = { 'x+': false, 'x-': false, 'z+': false, 'z-': false }
+  let siren = null // an ambulance on its way to the crossroad: the lights change for it
   for (const c of cars) {
     if (!c.active || c.crash) continue // a wreck does not count as somebody waiting or crossing
+    if (c.special === 'ambulance' && toLine(c) >= -1.5 && toLine(c) < 14) siren = c
     if (inCrossroad(c) || committed(c)) busy[c.axis]++
     else if (toLine(c) >= 0 && toLine(c) < 12) {
       if (c.turn === 'left') {
@@ -332,8 +338,12 @@ function updateSignal(cars, walkers, tr, dt) {
   const elsewhere = PHASES.some((p, i) => i !== here && demand(p))
   sig.age += dt
   if (sig.hold && (!sig.hold.active || !sig.hold.passing)) sig.hold = null
+  sig.siren = !!siren
+  const mine = siren && PHASES[here].axis === siren.axis && !PHASES[here].left // the siren is on the road that has the green
   if (sig.hold) sig.mode = 'green' // somebody is overtaking through the crossroad, nobody else goes now
-  else if (sig.mode === 'green') {
+  else if (siren && sig.mode === 'green') {
+    if (!mine && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // everybody else gets their yellow and then a red
+  } else if (sig.mode === 'green') {
     const limit = PHASES[here].left ? LEFT_GREEN : GREEN
     if (elsewhere && !demand(PHASES[here]) && !busy[sig.axis] && sig.age >= 1) { sig.mode = 'yellow'; sig.age = 0 } // nobody here, hand over soon
     else if (elsewhere && sig.age >= limit) { sig.mode = 'yellow'; sig.age = 0 }
@@ -345,6 +355,7 @@ function updateSignal(cars, walkers, tr, dt) {
       const i = (here + k) % PHASES.length
       if (demand(PHASES[i])) { next = i; break }
     }
+    if (siren) next = PHASES.findIndex((p) => p.axis === siren.axis && !p.left) // the green goes to the ambulance's road
     const p = PHASES[next]
     sig.phase = p.id
     sig.axis = p.axis
@@ -358,7 +369,7 @@ function updateSignal(cars, walkers, tr, dt) {
 
 // may this car go now? a left turn needs the arrow for its direction, everybody else needs the road's through phase
 const allows = (sig, c) => sig.mode === 'green' && sig.phase === (c.turn === 'left' ? c.axis + 'l' + (c.dir > 0 ? '+' : '-') : c.axis)
-const walkersGo = (sig, axis) => sig.mode === 'green' && sig.phase === axis // people only cross in a through phase
+const walkersGo = (sig, axis) => sig.mode === 'green' && sig.phase === axis && !sig.siren // people only cross in a through phase (and not while an ambulance is coming: those on the way over finish, nobody new steps out)
 
 // ---------- turning ----------
 
@@ -499,7 +510,7 @@ export function sweepClear(c, cars, walkers, sig, arc = null, why = null) { // (
       const along = px * mine.hx + pz * mine.hz, across = -px * mine.hz + pz * mine.hx
       if (Math.hypot(Math.max(Math.abs(along) - mine.hl, 0), Math.max(Math.abs(across) - mine.hw, 0)) < f.r + 0.08) return no('lamp post')
     }
-    const by = s / speed + 0.5 // by the time i am at this spot, anybody coming has covered up to this much road
+    const by = a.kind === 'u' ? s / (speed * 0.55) + 0.9 : s / speed + 0.5 // by the time i am at this spot, anybody coming has covered up to this much road (a car that starts a U-turn from standing is slow at first)
     for (const o of cars) {
       if (o === c || !o.active) continue
       if (o.road === c.road && o.dir === c.dir && Math.abs(o.lat - c.lat) < 0.4 && o.t * c.dir < c.t * c.dir) continue // in my lane behind me: the curve never reaches it
@@ -717,7 +728,7 @@ function lineAt(w, lots, t) {
 function setLane(w, lots) {
   const ahead = w.t + w.dir * (w.hl + 0.9)
   const edge = Math.min(lineAt(w, lots, w.t), lineAt(w, lots, ahead), lineAt(w, lots, w.t - w.dir * (w.hl + 0.3)))
-  const gap = Math.max(SPACING[0], Math.min(SPACING[1], edge - w.hw - 0.01 - INNER))
+  const gap = Math.max(SPACING[0], Math.min(SPACING[1], edge - w.hw - LINE_GAP - INNER))
   const near = w.side * INNER, far = w.side * (INNER + gap)
   w.lane = w.dir > 0 ? near : far
   w.alt = w.dir > 0 ? far : near
@@ -780,7 +791,13 @@ function turnAround(w, lots) {
 }
 
 function stepWalker(w, walkers, cars, tr, dt) {
-  if (!w.active) return // (somebody who is not on the street: an onlooker who has not come yet, or has left)
+  if (!w.active) { // somebody who is not on the street: an onlooker who has not come yet, or has left, or somebody who walked off the end and comes back in a while
+    if (w.away > 0) {
+      w.away -= dt
+      if (w.away <= 0) { w.t = -(Math.sign(w.t) || 1); if (!sendWatcher(w, walkers, w.axis, w.side, null)) w.away = 0.5 } // (in at the other end, when there is room there)
+    }
+    return
+  }
   if (w.down) { w.speed = 0; w.still = 0; w.waiting = false; w.crossing = false; return } // (somebody who was hit lies where they are)
   setLane(w, tr.lots)
   updatePass(w, walkers, WALK, (plan) => plan.end < WALK.far + reach && (plan.start > WALK.zone || plan.end < -WALK.zone))
@@ -807,6 +824,7 @@ function stepWalker(w, walkers, cars, tr, dt) {
   w.t += w.dir * w.speed * dt
   w.still = w.speed < 0.03 && !w.waiting ? w.still + dt : 0
   if (w.leaving && Math.abs(w.t) > WALK.edge + reach - 0.4) { w.active = false; w.leaving = false; return } // (an onlooker who walks off the end of the footpath is gone)
+  if (Math.abs(w.t) > WALK.edge + reach - 0.4 && w.dir === Math.sign(w.t)) { w.active = false; w.away = 3 + (w.id % 4); return } // (they walk off the end of the footpath and are gone, they do not turn round)
   if (Math.abs(w.t) > WALK.edge + reach || (w.still > 20 && !w.watch)) turnAround(w, tr.lots)
 }
 

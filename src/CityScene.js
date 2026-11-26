@@ -595,8 +595,9 @@ export class CityScene {
     const H = 2.5
     if (S.shaft === 'bricks') {
       for (let i = 0; i < 6; i++) bx(g, 0.3, H / 6, 0.3, S.bricks[i % S.bricks.length], 0, (i * H) / 6, 0)
-    } else cyl(g, S.shaft === 'log' ? 0.11 : 0.07, H, S.pole, 0, 0, 0, S.shaft === 'log' ? 7 : 8)
-    if (S.base) bx(g, 0.26, 0.14, 0.26, S.base, 0, 0, 0)
+    } else cyl(g, S.shaft === 'log' ? 0.12 : 0.1, H, shade(S.pole ?? S.head ?? 0x444444, 0.16), 0, 0, 0, S.shaft === 'log' ? 7 : 8) // (a thick, lighter pole: from any side it is plainly a pole that holds the lights, not something that blends into the heads or into somebody walking past)
+    bx(g, 0.34, 0.12, 0.34, S.base || shade(S.pole ?? S.head ?? 0x444444, 0.1), 0, 0, 0)
+    bx(g, 0.22, 0.06, 0.22, shade(S.pole ?? S.head ?? 0x444444, 0.24), 0, 0.12, 0)
     if (S.cap) mk(g, new THREE.SphereGeometry(0.13, 8, 6), S.cap, 0, H + 0.1, 0)
 
     this.signals = []
@@ -859,13 +860,16 @@ export class CityScene {
     const cap = 13.2 + (this.E - 15) // the end of the footpath
     const pairs = []
     for (const c of this.cars) {
-      if (!c.active || c.special || c.crash || c.passing || c.arc || c.waitMerge || c.road !== r.axis || c.turn !== 'straight' || Math.abs(c.lat - c.lane) > 0.1 || c.dir * c.t < 1.8) continue
+      if (!c.active || c.special || c.crash || c.passing || c.arc || c.waitMerge || c.road !== r.axis || c.turn !== 'straight' || Math.abs(c.lat - c.lane) > 0.1 || c.dir * c.t < 2.2) continue
       for (const w of this.walkers) {
-        if (!w.active || w.down || w.watch || w.axis !== r.axis || w.waiting || w.crossing || w.inPlaza || Math.sign(w.lat) !== Math.sign(c.lat) || Math.abs(w.lat) < 2.2 || Math.sign(w.t) !== Math.sign(c.t)) continue // (the outer lane: the car goes up on the footpath, clear of the road)
+        if (!w.active || w.down || w.watch || w.axis !== r.axis || w.waiting || w.crossing || w.inPlaza || Math.sign(w.lat) !== Math.sign(c.lat) || Math.abs(w.lat) < 1.95 || Math.sign(w.t) !== Math.sign(c.t)) continue // (the outer lane: the car goes up on the footpath, clear of the road and of the ambulance's lane)
         const gap = (w.t - c.t) * c.dir
         const away = Math.abs(w.t)
-        if (this.walkers.some((o) => o !== w && o.active && o.axis === w.axis && o.side === w.side && Math.abs(o.t - w.t) < 4.5)) continue // (nobody else close to them)
-        if (gap < 3 || gap > 10 || away < 5.2 || away > Math.min(cap - 1.7, 11.6) || Math.abs(w.t - r.along) > 12) continue
+        if (this.walkers.some((o) => o !== w && o.active && o.axis === w.axis && o.side === w.side && Math.abs(o.t - w.t) < 3.5)) continue // (nobody else close to them)
+        const from = c.t - c.dir * (c.hl + 1.5), to = w.t + c.dir * 1.5 // (the stretch of footpath the car will sweep over)
+        if (this.walkers.some((o) => o !== w && o.active && o.axis === w.axis && o.side === w.side && (o.t - from) * (o.t - to) <= 0)) continue
+        const out = w.dir === Math.sign(w.t) // (walking out towards the end of the footpath: they will be about three further out when the car reaches them)
+        if (gap < 3.5 || gap > 10 || away < 4.4 || away + (out ? 3.2 : 0) > Math.min(cap - 1.5, 11.6) || Math.abs(w.t - r.along) > 12) continue
         pairs.push({ c, w })
       }
     }
@@ -947,7 +951,7 @@ export class CityScene {
     const lane = A.car.lane
     const sp = kind === 'ambulance'
       ? A.vic.t + A.dir * (1.0 + 2 * car.hl) // the back doors are just ahead of the one who was hit
-      : A.car.t - A.dir * (A.car.hl + 0.4) // right behind the car that crashed
+      : A.car.t - A.dir * (A.car.hl + 1.6) // behind the car that crashed, with room between them for the driver and the officer
     if (!dispatchCar(car, this.cars, A.axis, lane, sp, kind)) return false
     car.car.visible = true
     return { car, spot: sp, stage: 'coming', hold: 0, k: 0 }
@@ -1043,21 +1047,22 @@ export class CityScene {
     if (P) {
       if (P.stage === 'coming' && P.car.park && P.car.park.at) { // an officer gets out and walks to the driver
         const door = this.doorOf(A, P, false)
-        const lane = A.s * 1.12 // the road beside the car (the traffic has been sent another way by now)
-        const dd = this.at(A, A.car.t, lane)
-        A.driver = this.makeActor('driver', dd[0], dd[1], 0) // the driver gets out of the car
+        // there is no room beside the car (the footpath is taken by the car, the road by the police car): the driver gets out at the back of the car and the officer comes to meet them there
+        A.meetLat = A.s * Math.max(1.8, Math.abs(A.car.lat))
+        const meet = this.at(A, A.car.t - A.dir * (A.car.hl + 0.6), A.meetLat)
+        A.driver = this.makeActor('driver', meet[0], meet[1], 0)
         A.officer = this.makeActor('officer', door[0], door[1], 0)
-        A.officer.pts = [this.at(A, A.car.t - A.dir * 0.55, lane)]
+        A.officer.pts = [this.at(A, A.car.t - A.dir * (A.car.hl + 1.1), A.meetLat)]
         A.actors.push(A.driver, A.officer)
         P.stage = 'walk'
       } else if (P.stage === 'walk') {
         if (!A.officer.pts.length) {
           P.hold += dt
-          if (P.hold > 1) { // both walk to the police car
-            const door = this.doorOf(A, P, false), lane = A.s * 1.12
+          if (P.hold > 1) { // both walk to the police car (the officer ahead, the driver behind, so they never cross)
+            const door = this.doorOf(A, P, false)
             const [dt2, dl2] = this.tOf(A, door[0], door[1])
-            A.officer.pts = [this.at(A, dt2 - A.dir * 0.35, dl2)] // (the way to the police car is -dir: the officer walks ahead, the driver behind, so they never cross)
-            A.driver.pts = [this.at(A, A.car.t - A.dir * 0.55, lane), this.at(A, dt2 + A.dir * 0.35, dl2)]
+            A.officer.pts = [this.at(A, dt2 - A.dir * 0.35, dl2)]
+            A.driver.pts = [this.at(A, dt2 + A.dir * 0.35, dl2)]
             P.stage = 'escort'
           }
         }
@@ -1576,7 +1581,7 @@ export class CityScene {
       u.hat.visible = !!P.hat
       if (P.hat) u.hat.material.color.set(P.hats ? P.hats[w.ci % P.hats.length] : P.hat)
       p.rotation.order = 'YXZ'
-      p.visible = w.active
+      p.visible = !!w.active
       this.world.add(p)
     })
   }
@@ -1597,6 +1602,14 @@ export class CityScene {
       const hl = Math.max(-size.min.x, size.max.x), hw = Math.max(-size.min.z, size.max.z)
       this.cars.push(Object.assign(newCar(hl, hw), { car, kind, ph: 0, special: kind }))
     }
+    // the board ends where it ends: a vehicle coming in or going out is cut off there, so nothing hangs in the air outside of it
+    const E = this.E
+    const board = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), E), new THREE.Plane(new THREE.Vector3(1, 0, 0), E), new THREE.Plane(new THREE.Vector3(0, 0, -1), E), new THREE.Plane(new THREE.Vector3(0, 0, 1), E)]
+    for (const c of this.cars) c.car.traverse((o) => {
+      if (!o.isMesh) return
+      const clip = (m) => { const k = m.clone(); k.clippingPlanes = board; return k } // (the colours are shared with other things: a copy of each)
+      o.material = Array.isArray(o.material) ? o.material.map(clip) : clip(o.material)
+    })
     this.spawnIn = 0.4
     for (let i = 0; i < 3; i++) this.spawnVehicle(true)
   }
@@ -2094,7 +2107,7 @@ export class CityScene {
     stepTraffic(this.cars, this.walkers, this.traffic, dt)
     this.paintSignals()
     for (const w of this.walkers) {
-      if (w.down || !w.active) { w.p.visible = w.active || w.down; continue } // (somebody lying on the footpath is placed by the accident, somebody not on the street is not drawn)
+      if (w.down || !w.active) { w.p.visible = !!(w.active || w.down); continue } // (somebody lying on the footpath is placed by the accident, somebody not on the street is not drawn)
       w.p.visible = true
       w.ph += dt * w.speed * 7 // the stride follows how fast they really go, so waiting people stand still
       const k = Math.min(1, w.speed * 4)

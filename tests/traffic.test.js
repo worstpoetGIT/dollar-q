@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, lotSize, startCrash, startHit, dispatchCar, sendWatcher, releaseWatcher, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
+import { newCar, makeTraffic, placeWalkers, spawnCar, stepTraffic, LANES, LOT_HALF, LOT_SMALL, LOT_FULL, lotSize, startCrash, startHit, dispatchCar, sendWatcher, releaseWatcher, endCrash, carPose, turnFits, setRoadSense } from '../src/traffic.js'
 
 const seeded = (a) => () => {
   a |= 0
@@ -52,7 +52,7 @@ function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
   const tr = makeTraffic(extra)
   if (lotSize) tr.lots = lotsOf(lotSize, extra > 0)
   for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
-  const out = { settledGap: 9, minGap: 9, outsideLine: 0, offPavement: 0, crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0, standing: 0, carsWaiting: 0, carTime: 0 }
+  const out = { settledGap: 9, minGap: 9, minLine: 9, outsideLine: 0, offPavement: 0, crashes: [], passes: 0, walked: 0, busiest: 0, trips: 0, lastTrip: 0, standing: 0, carsWaiting: 0, carTime: 0 }
   const still = walkers.map(() => 0)
   const was = new Map()
   let spawnIn = 0.4
@@ -60,19 +60,22 @@ function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
     spawnIn -= dt
     if (spawnIn <= 0) { spawnIn = 1.8 + rng() * 2.6; spawnCar(cars, rng) }
     const walkedBefore = walkers.map((w) => w.t)
+    const onBefore = walkers.map((w) => w.active)
     const wasOn = cars.map((c) => c.active)
     stepTraffic(cars, walkers, tr, dt)
-    for (const w of walkers) if (Math.abs(w.lat) - w.hw < 1.43 || Math.abs(w.lat) + w.hw > 2.45) out.offPavement++
+    for (const w of walkers) if (w.active && (Math.abs(w.lat) - w.hw < 1.43 || Math.abs(w.lat) + w.hw > 2.45)) out.offPavement++
     for (const w of walkers) { // the lot line beside this person: the biggest lot they are beside decides
+      if (!w.active) continue // (walked off the end of the footpath: not on the street for a while)
       // the lot line beside this person: the biggest lot they are beside decides (no lots at all: as for a fully grown lot)
       const beside = !lotSize ? [] : lotsOf(lotSize, extra > 0).filter((l) => Math.sign(w.axis === 'x' ? l.z : l.x) === w.side && Math.abs(w.t - (w.axis === 'x' ? l.x : l.z)) < LOT_HALF * l.size + 0.3 && Math.abs(Math.abs(w.axis === 'x' ? l.z : l.x) - 4.9) < 0.5)
       const edge = !lotSize ? 4.9 - LOT_HALF : 4.9 - LOT_HALF * (beside.length ? Math.max(...beside.map((l) => l.size)) : LOT_SMALL)
       if (Math.abs(w.lat) + w.hw > edge + 0.01) out.outsideLine++
+      out.minLine = Math.min(out.minLine, edge - Math.abs(w.lat) - w.hw) // how far the body is from the house line
     }
     for (let i = 0; i < walkers.length; i++) { // how far apart (after the first few seconds, when people have settled into their lanes) are two people who are beside each other?
       for (let j = i + 1; j < walkers.length; j++) {
         const a = walkers[i], b = walkers[j]
-        if (step * dt > 5 && a.road === b.road && Math.abs(a.t - b.t) < 0.5) {
+        if (a.active && b.active && step * dt > 5 && a.road === b.road && Math.abs(a.t - b.t) < 0.5) {
           const gap = Math.abs(a.lat - b.lat) - a.hw - b.hw
           out.minGap = Math.min(out.minGap, gap)
           const settled = (w) => !w.passing && Math.abs(w.lat - w.lane) < 0.02 // in their lane, not in the middle of getting past somebody
@@ -81,12 +84,12 @@ function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
       }
     }
     walkers.forEach((w, i) => { // anybody standing about on the crossroad?
-      still[i] = w.inPlaza && w.speed < 0.03 ? still[i] + dt : 0
+      still[i] = w.active && w.inPlaza && w.speed < 0.03 ? still[i] + dt : 0
       out.standing = Math.max(out.standing, still[i])
     })
     for (const c of cars) if (c.active) { out.carTime++; if (c.speed < 0.05) out.carsWaiting++ }
     cars.forEach((c, i) => { if (wasOn[i] && !c.active) { out.trips++; out.lastTrip = step * dt } })
-    walkers.forEach((w, i) => { out.walked += Math.abs(w.t - walkedBefore[i]) })
+    walkers.forEach((w, i) => { if (onBefore[i] && w.active) out.walked += Math.abs(w.t - walkedBefore[i]) })
     for (const c of cars) {
       const now = !!c.passing
       if (now && !was.get(c)) out.passes++
@@ -94,7 +97,7 @@ function simulate(name, seed, minutes, dt, lotSize, extra = 0) {
     }
     out.busiest = Math.max(out.busiest, cars.filter((c) => c.active).length)
 
-    const all = [...cars.filter((c) => c.active), ...walkers]
+    const all = [...cars.filter((c) => c.active), ...walkers.filter((w) => w.active)]
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
         if (overlap(rectOf(all[i]), rectOf(all[j]))) {
@@ -171,7 +174,7 @@ describe('traffic: the footpath gets thinner the more is spent', () => {
     }
     expect(lotSize(4)).toBeLessThan(lotSize(15))
     expect(lotSize(15)).toBeLessThan(lotSize(40))
-    expect(lotSize(40)).toBeGreaterThan(0.99)
+    expect(lotSize(40)).toBeGreaterThan(0.95)
     expect(lotSize(-3)).toBe(lotSize(0))
   })
 
@@ -188,7 +191,7 @@ describe('traffic: the footpath gets thinner the more is spent', () => {
   it('an empty or tiny lot leaves wide lanes, a big one squeezes them to the tightest gap', () => {
     const gaps = [0.55, 0.7, 0.85, 1].map(gapAt)
     for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThanOrEqual(gaps[i - 1] + 1e-9)
-    expect(gaps[0]).toBeGreaterThan(gaps[3] + 0.3) // you can see the difference
+    expect(gaps[0]).toBeGreaterThan(gaps[3] + 0.25) // you can see the difference
     expect(gaps[3]).toBeGreaterThanOrEqual(0.52)   // but even the tightest still lets two people pass
   })
 
@@ -434,7 +437,7 @@ describe('traffic: turning back behind a wreck', () => {
       for (const c of cars) if (c.rerouted && !seenRe.has(c)) { seenRe.add(c); out.rerouted++ }
       const act = cars.filter((c) => c.active)
       if (step * dt > (minutes * 60) / 2) { out.queue += act.filter((c) => c !== a && c !== b && c.speed < 0.05 && Math.abs(c.t) > 7).length; out.queueSteps++; out.stuck += act.filter((c) => (c.stuck || 0) > 1.5).length } // how many stand waiting beside the wreck, on average, in the second half (and how many of them are held up by the wreck itself)
-      const all = [...act, ...walkers]
+      const all = [...act, ...walkers.filter((w) => w.active)]
       for (let i = 0; i < all.length && out.overlaps.length < 3; i++) for (let j = i + 1; j < all.length; j++) {
         if (all[i] === a && all[j] === b) continue
         if (overlap(rectOf(all[i]), rectOf(all[j]))) { out.overlaps.push(`${seed} ${kind} at ${(step * dt).toFixed(1)}s`); break }
@@ -480,7 +483,7 @@ describe('traffic: a car that loses control hits somebody on the pavement', () =
     const tr = makeTraffic()
     const walkers = placeWalkers(8, rng)
     const w = walkers.find((x) => x.axis === 'x' && x.side === 1)
-    Object.assign(w, { t: 15, dir: -1, base: 0.9 })
+    Object.assign(w, { t: 12, dir: -1, base: 0.9 })
     const c = cars[0]
     Object.assign(c, { active: true, axis: 'x', road: 'x', lane: 0.75, alt: -0.75, lat: 0.75, goal: 0.75, dir: 1, t: 6.5, base: 2.6, speed: 2.6, passing: null, still: 0, turn: 'straight' })
     for (const o of walkers) if (o !== w && o.axis === 'x' && o.side === 1) o.active = false
@@ -596,6 +599,83 @@ describe('traffic: onlookers and emergency vehicles come in from the ends of the
   }, 60000)
 })
 
+describe('traffic: the ambulance has priority, the police do not, and people walk off the end of the road', () => {
+  const run = (seed, kind) => {
+    const rng = seeded(seed)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    for (let i = 0; i < 3; i++) spawnCar(cars, rng, true)
+    const e = cars[cars.length - 1]
+    e.active = false
+    let spawnIn = 0.5, started = false, waited = 0, through = null, bad = 0
+    for (let step = 0; step < 90 * 30; step++) {
+      const t = step / 30
+      spawnIn -= 1 / 30
+      if (spawnIn <= 0) { spawnIn = 1.4 + rng() * 1.5; spawnCar(cars.filter((c) => c !== e), rng, false, { axis: 'z' }) } // (busy cross traffic)
+      if (!started && t > 10 + seed) { // the siren comes in from the end of the road on a red for it
+        started = dispatchCar(e, cars, 'x', 0.75, -14, kind)
+        if (started) { e.park = null; Object.assign(tr.sig, { phase: 'z', axis: 'z', left: 0, mode: 'green', age: 0, hold: null }) } // (the cross road has the green)
+      }
+      stepTraffic(cars, walkers, tr, 1 / 30)
+      if (started && e.active) {
+        if (e.t > -7 && e.t < -3 && e.speed < 0.05) waited += 1 / 30 // standing at the stop line
+        if (through === null && e.t > 3) through = t
+      }
+      const all = [...cars.filter((c) => c.active), ...walkers.filter((w) => w.active)]
+      for (let a = 0; a < all.length; a++) for (let b = a + 1; b < all.length; b++) if (overlap(rectOf(all[a]), rectOf(all[b]))) bad++
+    }
+    return { waited, through, bad, started }
+  }
+
+  it('an ambulance is not held up long at a red, and nobody runs into anybody while the lights change for it', () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const r = run(seed, 'ambulance')
+      expect(r.started).toBe(true)
+      expect(r.bad).toBe(0)
+      expect(r.waited).toBeLessThan(7) // (a green for its road comes after the yellow and the red the others get)
+    }
+  }, 60000)
+
+  it('a police car waits for its green like any other car (no priority at the lights)', () => {
+    let police = 0, amb = 0
+    for (const seed of [1, 2, 3, 4]) { police += run(seed, 'police').waited; amb += run(seed, 'ambulance').waited }
+    expect(police).toBeGreaterThan(amb)
+  }, 60000)
+
+  it('people walk off the end of the footpath and come back in at the other end, they do not turn round and they do not pile up', () => {
+    const rng = seeded(7)
+    const cars = fleet('city')
+    const tr = makeTraffic()
+    const walkers = placeWalkers(8, rng)
+    let exits = 0, turnsAtEnd = 0, bad = 0
+    const was = walkers.map((w) => ({ on: w.active, dir: w.dir }))
+    for (let step = 0; step < 240 * 30; step++) {
+      stepTraffic(cars, walkers, tr, 1 / 30)
+      walkers.forEach((w, i) => {
+        if (was[i].on && !w.active) exits++
+        if (w.active && was[i].on && w.dir !== was[i].dir && Math.abs(w.t) > 12.5) turnsAtEnd++
+        was[i] = { on: w.active, dir: w.dir }
+      })
+      const live = walkers.filter((w) => w.active)
+      for (let a = 0; a < live.length; a++) for (let b = a + 1; b < live.length; b++) if (overlap(rectOf(live[a]), rectOf(live[b]))) bad++
+    }
+    expect(exits).toBeGreaterThan(3)
+    expect(turnsAtEnd).toBe(0)
+    expect(bad).toBe(0)
+    expect(walkers.filter((w) => w.active).length).toBeGreaterThanOrEqual(6) // (they come back: the street does not empty)
+  }, 60000)
+
+  it('on the biggest lot people keep a clear strip between their bodies and the house line', () => {
+    for (const seed of [1, 2, 3]) {
+      const r = simulate('city', seed, 4, 1 / 30, () => LOT_FULL)
+      expect(r.crashes).toEqual([])
+      expect(r.outsideLine).toBe(0)
+      expect(r.minLine).toBeGreaterThan(0.08) // never on the edge of the house
+    }
+  }, 60000)
+})
+
 describe('traffic: turning at the crossroad', () => {
   const run = (name, seed, minutes, each) => {
     const rng = seeded(seed)
@@ -680,7 +760,7 @@ describe('traffic: turning at the crossroad', () => {
             const r = rectOf(c)
             const a = -r.x * r.hx - r.z * r.hz, b = r.x * r.hz - r.z * r.hx // the pole in the middle, as seen from the vehicle
             least = Math.min(least, Math.hypot(Math.max(Math.abs(a) - r.hl, 0), Math.max(Math.abs(b) - r.hw, 0)) - 0.0) // from the middle of the pole
-            for (const o of [...act, ...(globalThis.__walkers || [])]) if (o !== c) least = Math.min(least, gap(r, rectOf(o)))
+            for (const o of [...act, ...(globalThis.__walkers || []).filter((w) => w.active)]) if (o !== c) least = Math.min(least, gap(r, rectOf(o)))
           }
         })
       }
