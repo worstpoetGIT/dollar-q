@@ -6,6 +6,7 @@ import { exportBackup, readBackup, applyBackup, lastBackup } from '../backup.js'
 import Account from './Account.jsx'
 import { useSyncStatus } from '../sync/service.js'
 import { useLenis } from '../hooks.js'
+import { LINKEDIN_URL, SHOUT_TEXT } from '../about.js'
 
 function Sub({ title, onBack, children }) {
   const ref = useRef(null)
@@ -122,6 +123,9 @@ export default function Profile({ s, sub, setSub }) {
             <button className="btn ghost" style={{ height: 46, fontSize: 18, color: 'var(--red)' }} onClick={() => setConfirm(true)}>Reset app (start over)</button>
           )}
         </div>
+      </div>
+      <div className="about-foot">
+        Say thanks: <a href={LINKEDIN_URL} target="_blank" rel="noopener noreferrer">{SHOUT_TEXT}</a>
       </div>
     </div>
   )

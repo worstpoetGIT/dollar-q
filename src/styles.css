@@ -269,3 +269,7 @@ select.field { appearance: none; -webkit-appearance: none; }
 .go .sp-snap { animation: spSnap calc(.3s * var(--k, 1)) cubic-bezier(.3,1.3,.6,1) calc(var(--delay, 0s) * var(--k, 1)) both; }
 @keyframes spSnap { 0% { opacity: 0; transform: translateY(-14px) scale(1.05, .96); } 55% { opacity: 1; transform: translateY(1.5px) scale(.98, 1.03); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sp-snap { animation-duration: .01s !important; animation-delay: 0s !important; } }
+
+/* the footer of the Profile page: a thanks to the maker */
+.about-foot { text-align: center; padding: 22px 16px calc(env(safe-area-inset-bottom, 0px) + 96px); font-size: 14px; color: var(--muted, #8a8a8a); }
+.about-foot a { color: var(--ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
