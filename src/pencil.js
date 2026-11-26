@@ -13,6 +13,22 @@ const audioContext = () => {
   return ctx
 }
 
+// phones only let a page make sound after the person has touched it, and the sound has to be switched on right in the touch. so on every touch or key press
+// the audio is woken up (and a silent blip is played), and on an iPhone the page asks for the "playback" kind of sound, which the silent switch does not mute.
+export function unlockAudio() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.audioSession) navigator.audioSession.type = 'playback'
+    const c = audioContext()
+    if (!c) return
+    if (c.state !== 'running') c.resume().catch(() => {})
+    const s = c.createBufferSource(); s.buffer = c.createBuffer(1, 1, 22050); s.connect(c.destination); s.start(0)
+  } catch { /* no audio here */ }
+}
+if (typeof window !== 'undefined') for (const ev of ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown']) window.addEventListener(ev, unlockAudio, { passive: true, capture: true })
+
+// what the sound is up to, to show on the splash tester
+export const pencilStatus = () => ({ audio: !!audioContext(), state: ctx ? ctx.state : 'none', recording: recording === null ? 'loading' : recording ? 'loaded' : 'failed' })
+
 // load the recording ahead of time, so it is ready when the splash starts
 export function preloadPencil() {
   if (loading || recording !== null) return loading
