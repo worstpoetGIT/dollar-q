@@ -1,5 +1,5 @@
 // the sound of the opening splash: one cut of a pair of scissors through paper (the owner's recording, see assets/scissors-cut.NOTE.txt).
-// it plays once and nothing else in the app makes a sound. it is timed so that the cut ENDS exactly when the splash ends (the splash tells how long it lasts).
+// it plays once and nothing else in the app makes a sound. the recording is exactly as long as the splash, so it starts with it and ends with it; if a recording is shorter, it is timed to END when the splash ends (the splash tells how long it lasts).
 import cutUrl from './assets/scissors-cut.wav?url'
 
 let ctx = null
