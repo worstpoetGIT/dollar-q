@@ -1,4 +1,0 @@
-pencil-write.mp3: a recording of a pencil writing on paper.
-Source: "Pencil Sounds" on OpenGameArt.org, https://opengameart.org/node/132692 (file pencil_write, from the clip "pencil_write" by NachtmahrTV).
-License: CC0 (public domain dedication), https://creativecommons.org/publicdomain/zero/1.0/ . No credit is required; it is given here anyway.
-The file is the 128 kbps MP3 version published on that page (the original is Ogg Vorbis; MP3 plays on every phone).

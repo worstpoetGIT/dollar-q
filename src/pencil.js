@@ -1,7 +1,6 @@
-// the sound under every opening splash: a real recording of a pencil writing on paper (CC0, see assets/pencil-write.LICENSE.txt), laid down three
-// times in a row at slightly different speeds so it lasts as long as the animation, and faded out at the end. if the recording cannot be played,
-// a pencil made from filtered noise takes its place (the older sound below).
-import pencilUrl from './assets/pencil-write.mp3?url'
+// the sound under every opening splash: a real recording of a pencil writing on paper (the owner's file, slowed down 1.3 times; see assets/pencil-asmr.NOTE.txt),
+// as long as the animation and faded out at the end. if the recording cannot be played, a pencil made from filtered noise takes its place (the older sound below).
+import pencilUrl from './assets/pencil-asmr.wav?url'
 
 let ctx = null
 let recording = null // the decoded recording, once it has loaded (or false when it could not be)
@@ -25,11 +24,11 @@ export function preloadPencil() {
   return loading
 }
 
-// where each pass of the recording starts, how fast it plays and how loud: pure, so it can be tested. the recording is about 1.2 s of writing.
-export function passesFor(seconds) {
-  const out = []
-  const plan = [[0, 1.0, 1], [1.0, 0.92, 0.95], [2.05, 1.08, 1], [3.05, 0.96, 0.95]]
-  for (const [at, rate, level] of plan) if (at < seconds - 0.4) out.push({ at, rate, level })
+// where each pass of the recording starts, how fast it plays and how loud: pure, so it can be tested. the recording is one pass of about 3.3 s of writing,
+// exactly as it was made (no change of speed); a splash longer than the recording gets it again after a short breath.
+export function passesFor(seconds, clip = 3.3) {
+  const out = [{ at: 0, rate: 1, level: 1 }]
+  for (let at = clip + 0.15; at < seconds - 0.8; at += clip + 0.15) out.push({ at, rate: 1, level: 0.95 })
   return out
 }
 
@@ -106,8 +105,8 @@ function startRecording(seconds, volume) {
     const g = c.createGain()
     const a = now + p.at, len = Math.min(recording.duration / p.rate, seconds - p.at)
     g.gain.setValueAtTime(0.0001, a)
-    g.gain.linearRampToValueAtTime(3.4 * p.level, a + 0.06) // (the recording is quiet: bring it up)
-    g.gain.setValueAtTime(3.4 * p.level, a + Math.max(0.07, len - 0.25))
+    g.gain.linearRampToValueAtTime(p.level, a + 0.04)
+    g.gain.setValueAtTime(p.level, a + Math.max(0.05, len - 0.25))
     g.gain.linearRampToValueAtTime(0.0001, a + len)
     src.connect(g); g.connect(master)
     src.start(a)

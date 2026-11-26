@@ -37,14 +37,12 @@ describe('opening splashes', () => {
     }
   })
 
-  it('the recording of the pencil is laid down in passes that cover the whole splash, each a little different', () => {
+  it('the recording of the pencil plays once from the start, at its own speed, and covers the splash', () => {
     const secs = (SPLASH_MS - 150) / 1000
     const passes = passesFor(secs)
-    expect(passes.length).toBeGreaterThanOrEqual(3)
-    expect(passes[0].at).toBe(0)
-    for (let i = 1; i < passes.length; i++) { expect(passes[i].at).toBeGreaterThan(passes[i - 1].at); expect(passes[i].at - passes[i - 1].at).toBeLessThan(1.4) } // (no silent gap between them)
-    expect(new Set(passes.map((p) => p.rate)).size).toBe(passes.length)
-    expect(passes[passes.length - 1].at).toBeLessThan(secs - 0.4)
+    expect(passes).toHaveLength(1)
+    expect(passes[0]).toMatchObject({ at: 0, rate: 1 })
+    expect(passesFor(9).length).toBeGreaterThan(1) // (a longer splash would get it again)
   })
 
   it('without audio support the sound does nothing and does not throw', () => {
