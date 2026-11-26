@@ -248,7 +248,7 @@ function makePolice() {
 function makeTruck(color = 0xf08a24) {
   const g = new THREE.Group()
   bx(g, 0.8, 0.6, 0.8, color, 1.05, 0.16, 0)
-  bx(g, 0.34, 0.3, 0.82, 0xcfe8f5, 1.28, 0.5, 0)
+  bx(g, 0.34, 0.3, 0.82, 0xcfe8f5, 1.31, 0.5, 0) // (the front of the glass sticks out past the cab: two faces in the same place flicker)
   bx(g, 1.9, 0.9, 0.86, 0xe5e7eb, -0.4, 0.2, 0)
   for (const x of [-1.0, -0.2, 1.1]) for (const z of [-0.38, 0.38]) bx(g, 0.26, 0.26, 0.12, 0x1a1a1a, x, 0, z)
   return g
