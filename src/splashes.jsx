@@ -84,23 +84,28 @@ function Japan({ go }) {
   )
 }
 
-/* ---------- Wireframe: the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes), drawn as outlines like lines on a plan ---------- */
+/* ---------- Wireframe: pencil sketch on dotted paper, in the same order as the Classic splash (the ? first, then its dot, then the $ in two strokes) ---------- */
+const PAPER = '#f4f3ef', PENCIL = '#1f2340'
 function Wire({ go }) {
-  const grey = '#e9e9e9'
   const Outline = ({ d, dur, delay }) => (
     <>
-      <Draw go={go} d={d} dur={dur} delay={delay} stroke="#111" strokeWidth="22" />
-      <Draw go={go} d={d} dur={dur} delay={delay} stroke={grey} strokeWidth="16" />
+      <Draw go={go} d={d} dur={dur} delay={delay} stroke={PENCIL} strokeWidth="26" />
+      <Draw go={go} d={d} dur={dur} delay={delay} stroke={PAPER} strokeWidth="20" />
     </>
   )
   return (
     <svg viewBox="0 0 240 240" aria-label="$?">
-      <g transform="translate(120 120) scale(.74) translate(-128 -118)">
-        <Outline d={Q} dur=".85" delay="0.1" />
-        <Circ go={go} cx="158" cy="154" r="16" dur=".5" delay="1.0" stroke="#d8232a" strokeWidth="4.4" />
-        <g transform="translate(-4 4)">
-          <Outline d={S1} dur="1.1" delay="1.1" />
-          <Outline d={S2} dur=".5" delay="2.1" />
+      <defs>
+        <filter id="sp-sketch" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="7" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="4" /></filter>
+      </defs>
+      <g filter="url(#sp-sketch)">
+        <g transform="translate(120 120) scale(.74) translate(-128 -118)">
+          <Outline d={Q} dur=".85" delay="0.1" />
+          <Circ go={go} cx="158" cy="154" r="14" dur=".5" delay="1.0" stroke={PENCIL} strokeWidth="5" />
+          <g transform="translate(-4 4)">
+            <Outline d={S1} dur="1.1" delay="1.1" />
+            <Outline d={S2} dur=".5" delay="2.1" />
+          </g>
         </g>
       </g>
     </svg>
@@ -194,7 +199,7 @@ export const SPLASHES = {
   lego: { Scene: Lego, k: 0.966, style: { '--sbg': '#2fa043', backgroundImage: 'radial-gradient(circle, #46c25b 0 28%, transparent 30%)', backgroundSize: '44px 44px' } },
   japan: { Scene: Japan, k: 0.956, style: { '--sbg': '#f2f2f2' } },
   ice: { Scene: Santy, k: 0.966, style: { '--sbg': '#e6e3dc' } },
-  wire: { Scene: Wire, k: 1.096, style: { '--sbg': '#e9e9e9' } },
+  wire: { Scene: Wire, k: 1.096, style: { '--sbg': PAPER, backgroundImage: 'radial-gradient(circle, rgba(31,35,64,.35) 0 1.2px, transparent 1.7px)', backgroundSize: '22px 22px' } },
   court: { Scene: Court, k: 0.891, style: { '--sbg': '#d9a066' } },
 }
 export const splashFor = (id) => SPLASHES[id] || SPLASHES.city
