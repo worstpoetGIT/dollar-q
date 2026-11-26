@@ -615,9 +615,9 @@ export class CityScene {
       bx(head, 0.22, 0.8, 0.3, S.head, 0.3, 1.6, 0)
       if (S.rim) bx(head, 0.02, 1.26, 0.36, S.rim, 0.19, 1.17, 0) // (the back frame covers the lamps and the arrows)
       if (S.roof) bx(head, 0.3, 0.05, 0.38, S.roof, 0.3, 2.4, 0)
-      const mats = [LIT[0], LIT[2]].map((c, i) => { // a red lamp over a green one (no yellow)
+      const mats = [LIT[0], LIT[2]].map((c, i) => { // red on top and green at the bottom, where they always were: the yellow place in the middle is left empty
         const m = new THREE.MeshBasicMaterial({ color: c })
-        const y = 2.22 - i * 0.34
+        const y = 2.24 - i * 0.48
         if (S.lamp === 'disc') mk(head, new THREE.CylinderGeometry(0.09, 0.09, 0.05, 10), m, 0.43, y, 0, false).rotation.z = Math.PI / 2
         else if (S.lamp === 'box') mk(head, new THREE.BoxGeometry(0.05, 0.15, 0.15), m, 0.43, y, 0, false)
         else mk(head, new THREE.SphereGeometry(0.085, 8, 6), m, 0.43, y, 0, false)
