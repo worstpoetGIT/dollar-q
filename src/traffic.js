@@ -712,8 +712,8 @@ export function spawnCar(cars, rng, anywhere = false, prefer = null) { // prefer
 // ---------- people ----------
 
 // the very end of the footpath: people walk to here and are gone, and come in from here (the scene fades them out and in over the last stretch)
-export const walkTip = () => WALK.edge + reach + 1.4
-export const TIP_FADE = 1.3
+export const walkTip = () => WALK.edge + reach + 1.9 // (the edge of the board: the end of the road)
+export const TIP_FADE = 0.7
 
 // where the lot lines are beside this footpath, around position t (distance from the middle of the road)
 function lineAt(w, lots, t) {
