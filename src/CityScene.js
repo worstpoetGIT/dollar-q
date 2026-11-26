@@ -719,9 +719,12 @@ export class CityScene {
         mk(g, new THREE.ConeGeometry(0.75 * sc, 1.3 * sc, 7), m.pine, 0, 1.2 * sc, 0)
         mk(g, new THREE.ConeGeometry(0.5 * sc, 0.75 * sc, 7), m.blossom, 0, 1.75 * sc, 0)
         mk(g, new THREE.ConeGeometry(0.34 * sc, 0.6 * sc, 7), m.blossom, 0, 2.3 * sc, 0)
+        mk(g, new THREE.OctahedronGeometry(0.11 * sc, 0), new THREE.MeshBasicMaterial({ color: 0xffd23b }), 0, 2.68 * sc, 0, false) // (a star on top and a few baubles)
+        ;[[0.5, 0.9, 0xff3b3b], [-0.45, 1.15, 0xffd23b], [0.1, 1.5, 0x4aa3ff], [-0.25, 1.95, 0xff3b3b], [0.3, 2.0, 0xffd23b]].forEach(([ox, y, col], i) => mk(g, new THREE.SphereGeometry(0.07 * sc, 6, 5), new THREE.MeshBasicMaterial({ color: col }), ox * sc * (i % 2 ? 0.6 : 0.8), y * sc, (i % 2 ? 0.45 : -0.4) * sc * 0.7, false))
       } else {
-        mk(g, new THREE.ConeGeometry(0.4 * sc, 1.6 * sc, 5), m.water, 0, 0.8 * sc, 0)
-        mk(g, new THREE.ConeGeometry(0.25 * sc, 0.9 * sc, 5), m.round, 0.4 * sc, 0.45 * sc, 0.2 * sc)
+        mk(g, new THREE.ConeGeometry(0.4 * sc, 1.6 * sc, 5), m.pine, 0, 0.8 * sc, 0) // (a young fir with a snow tip)
+        mk(g, new THREE.ConeGeometry(0.2 * sc, 0.5 * sc, 5), m.blossom, 0, 1.45 * sc, 0)
+        mk(g, new THREE.ConeGeometry(0.25 * sc, 0.9 * sc, 5), m.pine, 0.4 * sc, 0.45 * sc, 0.2 * sc)
       }
     } else if (kind === 'cone') {
       if (type === 'p') {
@@ -2339,7 +2342,7 @@ const BRICK_KITS = {
   city: { colors: [0xb5543a, 0xc9694b, 0xa04632], shape: 'brick' },
   lego: { colors: [0xe3000b, 0xffd500, 0x0057b8, 0x00852b], shape: 'lego' },
   japan: { colors: [0x8b5a2b, 0xb08968, 0xd9c7a0], shape: 'plank' },
-  ice: { colors: [0xcfeeff, 0xe8f6ff, 0xaee1ff], shape: 'cube' },
+  ice: { colors: [0xc0392b, 0x2f8f5a, 0xf2e8d5], shape: 'cube' },
   wire: { colors: [0x0a66c2, 0x0a8f3c, 0xc2187a], shape: 'cube' },
   court: { colors: [0xe8742a], shape: 'ball' },
 }

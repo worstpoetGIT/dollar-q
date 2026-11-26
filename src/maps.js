@@ -4,7 +4,7 @@ export const MAP_LIST = [
   { id: 'city', name: 'Classic City', sky: ['#bfe3ff', '#eaf6ff'], ground: '#74c44a', road: '#48556b', accent: ['#e5383b', '#3a86ff', '#f4a259'] },
   { id: 'lego', name: 'Lego', sky: ['#aee1ff', '#f0faff'], ground: '#3fae49', road: '#6b7280', accent: ['#e3000b', '#ffd500', '#0057b8'] },
   { id: 'japan', name: 'Japan', sky: ['#8fd3ff', '#ffd6ea'], ground: '#8fd16a', road: '#5a6072', accent: ['#e63946', '#ffffff', '#ffb7d5'] },
-  { id: 'ice', name: 'Ice Age', sky: ['#cfe6f7', '#f4faff'], ground: '#f4f9fd', road: '#a9d8f5', accent: ['#8b5a2b', '#cfeeff', '#ffffff'] },
+  { id: 'ice', name: 'Santy', sky: ['#9db8e8', '#f1f6ff'], ground: '#f4f9fd', road: '#8fa3bf', accent: ['#c0392b', '#2f8f5a', '#f2c94c'] },
   { id: 'wire', name: 'Wireframe', sky: ['#ffffff', '#ffffff'], ground: '#eef3f8', road: '#0a66c2', accent: ['#0a66c2', '#0a8f3c', '#c2187a'] },
   { id: 'court', name: 'Basketball Court', sky: ['#ffe3c2', '#fff5e8'], ground: '#d9a066', road: '#1d3f8a', accent: ['#e8742a', '#ffffff', '#c0392b'] },
 ]
@@ -52,14 +52,14 @@ export function makeMaps(h) {
     ice(g, f, col) {
       for (let i = 0; i < f; i++) {
         const k = Math.max(0.6, 1 - i * 0.03)
-        bx(g, 3.0 * k, 0.66, 2.7 * k, i % 2 ? 0xa9d8f5 : 0xcfeeff, 0, i * 0.7, 0)
+        bx(g, 3.0 * k, 0.66, 2.7 * k, i % 2 ? 0xf2e8d5 : 0xc0392b, 0, i * 0.7, 0)
         bx(g, 3.0 * k + 0.06, 0.1, 2.7 * k + 0.06, col, 0, i * 0.7 + 0.5, 0)
       }
       const top = f * 0.7, k = Math.max(0.6, 1 - (f - 1) * 0.03)
       const cap = mk(g, new THREE.SphereGeometry(1.75 * k, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0xffffff, 0, top - 0.05, 0)
       cap.scale.y = 0.45
       bx(g, 0.7, 0.8, 0.1, 0x3b2a20, 0, 0, 1.36)
-      for (const sx of [-1, 1]) mk(g, new THREE.ConeGeometry(0.22, 0.9, 5), 0xbfe6fa, sx * 1.7, 0.45, 1.2)
+      for (const sx of [-1, 1]) mk(g, new THREE.ConeGeometry(0.22, 0.9, 5), 0x2f8f5a, sx * 1.7, 0.45, 1.2)
     },
     court(g, f, col) {
       const fh = 0.64
@@ -142,20 +142,21 @@ export function makeMaps(h) {
     bx(g, 1.6, 0.95, 0.9, c, 0, 0.55, 0)
     bx(g, 0.7, 0.8, 0.8, shade(c, 0.05), 0.95, 0.85, 0)
     bx(g, 0.2, 0.9, 0.22, shade(c, -0.05), 1.35, 0.1, 0)
-    for (const z of [-0.3, 0.3]) { const t = mk(g, new THREE.ConeGeometry(0.07, 0.8, 6), 0xfdf6e3, 1.5, 0.75, z); t.rotation.z = -1.9 }
+    for (const z of [-0.3, 0.3]) { const t = mk(g, new THREE.ConeGeometry(0.07, 0.8, 6), 0x5c3b1c, 1.3, 1.45, z); t.rotation.z = -0.35 }
+    mk(g, new THREE.SphereGeometry(0.12, 8, 6), N(0xff2b2b), 1.38, 0.8, 0, false)
     for (const x of [-0.55, 0.55]) for (const z of [-0.3, 0.3]) bx(g, 0.3, 0.6, 0.3, shade(c, -0.08), x, 0, z)
-    bx(g, 1.3, 0.12, 0.7, 0xffffff, -0.1, 1.5, 0)
+    bx(g, 1.3, 0.12, 0.7, 0xc0392b, -0.1, 1.5, 0) // (the red saddle blanket)
     g.scale.setScalar(sc)
     g.userData = { y: 0.08, bob: 0.035 }
     return g
   }
   const saber = () => {
     const g = G()
-    bx(g, 1.1, 0.42, 0.42, 0xd98a3a, 0, 0.3, 0)
-    bx(g, 0.4, 0.4, 0.4, 0xd98a3a, 0.7, 0.45, 0)
-    for (const z of [-0.1, 0.1]) bx(g, 0.05, 0.22, 0.05, 0xffffff, 0.85, 0.24, z)
-    for (const x of [-0.4, 0.4]) for (const z of [-0.15, 0.15]) bx(g, 0.12, 0.3, 0.12, 0xb8702a, x, 0, z)
-    bx(g, 0.5, 0.08, 0.08, 0xd98a3a, -0.8, 0.55, 0)
+    bx(g, 1.1, 0.42, 0.42, 0x2f8f5a, 0, 0.3, 0)
+    bx(g, 0.4, 0.4, 0.4, 0xc0392b, 0.7, 0.45, 0)
+    bx(g, 0.1, 0.44, 0.44, 0xf2c94c, 0, 0.3, 0)
+    for (const x of [-0.4, 0.4]) for (const z of [-0.15, 0.15]) bx(g, 0.12, 0.3, 0.12, 0x5c3b1c, x, 0, z)
+    bx(g, 0.5, 0.08, 0.08, 0xf2c94c, -0.8, 0.55, 0)
     g.userData = { y: 0.08, bob: 0.05 }
     return g
   }
@@ -163,8 +164,9 @@ export function makeMaps(h) {
     const g = G()
     bx(g, 1.5, 0.08, 0.7, 0x8b5a2b, 0, 0.14, 0)
     for (const z of [-0.3, 0.3]) bx(g, 1.7, 0.06, 0.06, 0x5c3b1c, 0.05, 0, z)
-    bx(g, 0.6, 0.4, 0.5, 0xc9a24b, -0.3, 0.22, 0)
-    bx(g, 0.5, 0.3, 0.3, 0xe8e1cf, 1.2, 0.05, 0)
+    bx(g, 0.6, 0.4, 0.5, 0xd8232a, -0.3, 0.22, 0)
+    bx(g, 0.5, 0.18, 0.4, 0x2f8f5a, -0.3, 0.6, 0)
+    bx(g, 0.5, 0.3, 0.3, 0xf2c94c, 1.2, 0.05, 0)
     return g
   }
 
@@ -203,22 +205,28 @@ export function makeMaps(h) {
         mk(s, new THREE.SphereGeometry(0.16, 8, 6), N(0xffb347), x + sx * 0.7, 1.2, z + 0.3, false)
       }
     },
-    glacier(s, x, z) {
+    xmasTree(s, x, z) { // a big decorated Christmas tree in the snow
       bx(s, 4.8, 0.12, 4.8, 0xe6f4fb, x, 0.1, z)
-      for (const [ox, oz, r, hh, c] of [[0, 0, 1.3, 3.4, 0xbfe6fa], [1.2, 0.8, 0.9, 2.2, 0xa9d8f5], [-1.2, 0.6, 0.8, 1.8, 0xd7f1ff], [0.3, -1.3, 0.7, 1.5, 0xa9d8f5], [-1.0, -1.1, 0.5, 1.1, 0xbfe6fa]]) {
-        mk(s, new THREE.ConeGeometry(r, hh, 5), c, x + ox, 0.2 + hh / 2, z + oz)
-      }
+      cyl(s, 0.3, 0.7, 0x5c3b1c, x, 0.2, z, 8)
+      const cols = [0xff3b3b, 0xffd23b, 0x4aa3ff, 0xffffff]
+      ;[[1.5, 1.3, 0.8], [1.15, 1.2, 1.75], [0.8, 1.1, 2.6]].forEach(([r, hh, y]) => {
+        mk(s, new THREE.ConeGeometry(r, hh, 9), 0x1f7a46, x, y, z)
+        for (let k = 0; k < 6; k++) { const a = k * 1.05 + y; mk(s, new THREE.SphereGeometry(0.1, 6, 5), N(cols[(k + Math.round(y)) % 4]), x + Math.cos(a) * r * 0.72, y - hh * 0.22, z + Math.sin(a) * r * 0.72, false) }
+      })
+      mk(s, new THREE.OctahedronGeometry(0.28, 0), N(0xffd23b), x, 3.5, z, false)
     },
-    cave(s, x, z) {
+    giftPile(s, x, z) { // a heap of presents with ribbons, a snowman at the side
       bx(s, 4.6, 0.12, 4.6, 0xe6f4fb, x, 0.1, z)
-      const rock = mk(s, new THREE.SphereGeometry(1.8, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2), 0x8a8f99, x, 0.2, z - 0.6)
-      rock.scale.y = 0.85
-      mk(s, new THREE.SphereGeometry(0.85, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2), 0x1c1c22, x, 0.2, z + 0.75)
-      const snow = mk(s, new THREE.SphereGeometry(1.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xffffff, x, 1.0, z - 0.6)
-      snow.scale.y = 0.45
-      cyl(s, 0.3, 0.1, 0x5c3b1c, x + 1.5, 0.22, z + 1.5, 8)
-      mk(s, new THREE.ConeGeometry(0.22, 0.6, 6), N(0xff9f1c), x + 1.5, 0.6, z + 1.5, false)
-      for (const [ox, oz] of [[-1.7, 1.6], [-1.3, 1.9]]) bx(s, 0.08, 1.4, 0.08, 0xfdf6e3, x + ox, 0.2, z + oz).rotation.z = 0.5
+      const gifts = [[0, 0, 1.4, 1.0, 0xc0392b, 0xf2c94c], [1.1, 0.7, 0.9, 0.8, 0x2f8f5a, 0xffffff], [-1.1, 0.5, 1.0, 0.7, 0xf2c94c, 0xc0392b], [0.2, -0.2, 0.9, 0.7, 0x4aa3ff, 0xffffff]]
+      gifts.forEach(([ox, oz, w, hh, c, r], i) => {
+        const y = i === 3 ? 1.1 : 0.2
+        bx(s, w, hh, w, c, x + ox, y, z + oz)
+        bx(s, 0.14, hh + 0.02, w + 0.02, r, x + ox, y, z + oz)
+        bx(s, w + 0.02, hh + 0.02, 0.14, r, x + ox, y, z + oz)
+      })
+      mk(s, new THREE.SphereGeometry(0.42, 10, 8), 0xffffff, x - 1.6, 0.75, z + 1.5)
+      mk(s, new THREE.SphereGeometry(0.3, 10, 8), 0xffffff, x - 1.6, 1.4, z + 1.5)
+      mk(s, new THREE.ConeGeometry(0.06, 0.25, 6), N(0xff7a1c), x - 1.6, 1.4, z + 1.8, false).rotation.x = Math.PI / 2
     },
     scoreboard(s, x, z) {
       bx(s, 4.6, 0.12, 4.6, 0xb97a45, x, 0.1, z)
@@ -237,7 +245,7 @@ export function makeMaps(h) {
     city: { shaft: 'round', pole: 0x2a2f38, head: 0x1d1f24, lamp: 'ball', base: 0x6b7280 },
     lego: { shaft: 'bricks', bricks: [0xe3000b, 0xffd500, 0x0057b8, 0x00852b], head: 0xffd500, lamp: 'disc', rim: 0x111111 },
     japan: { shaft: 'round', pole: 0xc0392b, head: 0xf5f0e6, lamp: 'ball', base: 0x2b2b2b, cap: 0x2b2b2b, roof: 0x2b2b2b },
-    ice: { shaft: 'log', pole: 0x7a5a3a, head: 0xbfe3f5, lamp: 'ball', base: 0xffffff, cap: 0xffffff },
+    ice: { shaft: 'log', pole: 0xc0392b, head: 0x1f6f43, lamp: 'ball', base: 0xffffff, cap: 0xffffff },
     wire: { shaft: 'round', pole: 0x0a66c2, head: 0xc2187a, lamp: 'ball', base: 0x0a8f3c },
     court: { shaft: 'round', pole: 0xe8742a, head: 0xffffff, lamp: 'ball', base: 0x1d3f8a, cap: 0xe8742a, rim: 0x1d3f8a },
   }
@@ -269,10 +277,10 @@ export function makeMaps(h) {
       landmarks: { 1: land.fuji, 2: land.shrine },
     }),
     ice: T('ice', {
-      c: { base: 0xb7d9ee, base2: 0x8fc0de, grass: 0xf4f9fd, pad: 0xe3f1fa, road: 0xa9d8f5, lampPole: 0x5c3b1c, lampGlow: 0xff9f1c, water: 0x9fdcf7, round: 0xeaf6fd, pine: 0x4a8a6a, blossom: 0xffffff, trunk: 0x5c3b1c, park: 0xe6f4fb, court: 0xd7ecf8, courtLine: 0xffffff, plaza: 0xe6f4fb, stone: 0x9aa5b1, grove: 0xe6f4fb, bench: 0x6e4623, crate: [0x9aa5b1, 0xbfe6fa, 0x8b5a2b], empty: 0xc9dfee },
+      c: { base: 0xb7d9ee, base2: 0x8fc0de, grass: 0xf4f9fd, pad: 0xe3f1fa, road: 0x8fa3bf, lampPole: 0xc0392b, lampGlow: 0xffd24d, water: 0x9fdcf7, round: 0xeaf6fd, pine: 0x1f7a46, blossom: 0xffffff, trunk: 0x5c3b1c, park: 0xe6f4fb, court: 0xd7ecf8, courtLine: 0xffffff, plaza: 0xe6f4fb, stone: 0x9aa5b1, grove: 0xe6f4fb, bench: 0x6e4623, crate: [0xc0392b, 0x2f8f5a, 0xf2c94c], empty: 0xc9dfee },
       sun: [0xf2f8ff, 2.2], hemi: [0xffffff, 0xb7d9ee, 1.6], glowLamps: true,
-      people: { coats: [0x8b5a2b, 0xb08968, 0x6e4623, 0xd9c7a0, 0x5c4d3c, 0xa67c52], pants: [0x4a403a, 0x5c4d3c, 0x3b2a20], hat: 0xf3ead8, shorts: false },
-      tree: 'snow', dashes: false, landmarks: { 1: land.glacier, 2: land.cave },
+      people: { coats: [0xc0392b, 0x2f8f5a, 0xffffff, 0xf2c94c, 0xd62828, 0x1f6f43], pants: [0x2b2d42, 0x4a403a, 0x1d3557], hat: 0xd62828, shorts: false },
+      tree: 'snow', dashes: false, landmarks: { 1: land.xmasTree, 2: land.giftPile },
     }),
     wire: T('wire', {
       c: { base: 0x0b1830, base2: 0x00e5ff, grass: 0x0b1830, pad: 0x12305a, road: 0x00e5ff, dash: 0x39ff14, cross: 0x39ff14, lampPole: 0x00e5ff, lampGlow: 0xffffff, water: 0x00e5ff, round: 0x39ff14, pine: 0x39ff14, blossom: 0x00ffa8, trunk: 0x00e5ff, park: 0x39ff14, court: 0xff2bd6, courtLine: 0xffffff, plaza: 0xfcee0a, stone: 0x9ad0ff, grove: 0x39ff14, bench: 0xfcee0a, crate: [0xff2bd6, 0x00e5ff, 0xfcee0a], empty: 0x2a4a7a },
