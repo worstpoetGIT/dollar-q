@@ -27,6 +27,12 @@ const L = (c, map) => {
   return TOON ? new THREE.MeshToonMaterial({ ...o, gradientMap: toonRamp() }) : new THREE.MeshLambertMaterial(o)
 }
 
+// make a material see-through (or solid again). the shader is built differently for solid and see-through materials, so it is rebuilt when that changes (and only then)
+function setSeeThrough(m, on, k) {
+  if (m.transparent !== on) { m.transparent = on; m.needsUpdate = true }
+  m.opacity = on ? Math.max(0.02, k) : 1
+}
+
 function mk(parent, geo, color, x = 0, y = 0, z = 0, shadow = true) {
   const m = new THREE.Mesh(geo, typeof color === 'number' ? L(color) : color)
   m.position.set(x, y, z)
@@ -1555,12 +1561,21 @@ export class CityScene {
   }
 
 
+  // how see-through a vehicle is (1: solid), the same way as for people
+  fadeCar(c, k) {
+    if (k >= 1 && !c.faded) return
+    if (!c.mats) { c.mats = []; c.car.traverse((o) => { if (o.isMesh) c.mats.push(o.material) }) }
+    const solid = k >= 1
+    for (const m of c.mats) { setSeeThrough(m, !solid, k) } // (depth is still written: the boxes of one vehicle hide each other and do not pile up into something solid)
+    c.faded = !solid
+  }
+
   // how see-through somebody is (1: solid). the materials are made see-through only while they are fading, so the rest of the time nothing is drawn differently
   fadePerson(w, k) {
     if (k >= 1 && !w.faded) return
     if (!w.mats) { w.mats = []; w.p.traverse((o) => { if (o.isMesh) w.mats.push(o.material) }) }
     const solid = k >= 1
-    for (const m of w.mats) { m.transparent = !solid; m.opacity = solid ? 1 : Math.max(0.02, k); m.depthWrite = solid }
+    for (const m of w.mats) setSeeThrough(m, !solid, k)
     w.faded = !solid
   }
 
@@ -1611,14 +1626,6 @@ export class CityScene {
       const hl = Math.max(-size.min.x, size.max.x), hw = Math.max(-size.min.z, size.max.z)
       this.cars.push(Object.assign(newCar(hl, hw), { car, kind, ph: 0, special: kind }))
     }
-    // the board ends where it ends: a vehicle coming in or going out is cut off there, so nothing hangs in the air outside of it
-    const E = this.E
-    const board = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), E), new THREE.Plane(new THREE.Vector3(1, 0, 0), E), new THREE.Plane(new THREE.Vector3(0, 0, -1), E), new THREE.Plane(new THREE.Vector3(0, 0, 1), E)]
-    for (const c of this.cars) c.car.traverse((o) => {
-      if (!o.isMesh) return
-      const clip = (m) => { const k = m.clone(); k.clippingPlanes = board; return k } // (the colours are shared with other things: a copy of each)
-      o.material = Array.isArray(o.material) ? o.material.map(clip) : clip(o.material)
-    })
     this.spawnIn = 0.4
     for (let i = 0; i < 3; i++) this.spawnVehicle(true)
   }
@@ -2155,6 +2162,10 @@ export class CityScene {
       if (ud.spin) ud.spin.rotation.z -= (c.speed * dt) / ud.r
       const pose = carPose(c) // also right in the middle of a turn
       c.car.position.set(pose.x, vy, pose.z)
+      // at the edge of the board vehicles fade out as they leave and fade in as they arrive (nothing is cut off, nothing hangs in the air outside)
+      const k = Math.max(0, Math.min(1, (this.E + 0.2 - Math.max(Math.abs(pose.x), Math.abs(pose.z))) / (c.hl + 0.8)))
+      this.fadeCar(c, k)
+      if (k < 0.02) c.car.visible = false
       c.car.rotation.y = Math.atan2(-pose.hz, pose.hx)
       if (c.special) { const on = Math.floor(t * 5) % 2, L = c.car.userData.lights; L[0].material.color.setHex(on ? 0xff2b2b : 0x4a0d0d); L[1].material.color.setHex(on ? 0x16306b : 0x3b82f6) } // the lights flash
       if (c.crash && c.crash.hit && c.crash.kind !== 'hit') c.car.rotation.y += c.crash.role === 'front' ? 0.1 : -0.1 // the cars sit a little crooked after the bump
