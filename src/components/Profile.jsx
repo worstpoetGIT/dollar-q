@@ -125,7 +125,7 @@ export default function Profile({ s, sub, setSub }) {
         </div>
       </div>
       <div className="about-foot">
-        Say thanks: <a href={LINKEDIN_URL} target="_blank" rel="noopener noreferrer">{SHOUT_TEXT}</a>
+        <a href={LINKEDIN_URL} target="_blank" rel="noopener noreferrer">{SHOUT_TEXT}</a>
       </div>
     </div>
   )
