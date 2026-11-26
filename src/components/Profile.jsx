@@ -7,6 +7,8 @@ import Account from './Account.jsx'
 import { useSyncStatus } from '../sync/service.js'
 import { useLenis } from '../hooks.js'
 import { LINKEDIN_URL, SHOUT_TEXT } from '../about.js'
+import { lastIconResult } from '../appIcon.js'
+import { Capacitor } from '@capacitor/core'
 
 function Sub({ title, onBack, children }) {
   const ref = useRef(null)
@@ -124,6 +126,7 @@ export default function Profile({ s, sub, setSub }) {
           )}
         </div>
       </div>
+      {Capacitor.isNativePlatform() && lastIconResult() && <div className="about-foot" style={{ paddingBottom: 0, fontSize: 12 }}>icon: {lastIconResult().name || 'main'} - {lastIconResult().ok ? lastIconResult().message : 'failed: ' + lastIconResult().message}</div>}
       <div className="about-foot">
         <a href={LINKEDIN_URL} target="_blank" rel="noopener noreferrer">{SHOUT_TEXT}</a>
       </div>
