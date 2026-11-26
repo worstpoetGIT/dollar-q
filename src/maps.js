@@ -137,36 +137,51 @@ export function makeMaps(h) {
     return g
   }
 
-  const mammoth = (c = 0x7a5230, sc = 1) => {
+  // reindeer: slim body, neck, head with antlers and a red nose, thin legs, a white tail
+  const reindeer = (c = 0x9a6b3c, sc = 1) => {
     const g = G()
-    bx(g, 1.6, 0.95, 0.9, c, 0, 0.55, 0)
-    bx(g, 0.7, 0.8, 0.8, shade(c, 0.05), 0.95, 0.85, 0)
-    bx(g, 0.2, 0.9, 0.22, shade(c, -0.05), 1.35, 0.1, 0)
-    for (const z of [-0.3, 0.3]) { const t = mk(g, new THREE.ConeGeometry(0.07, 0.8, 6), 0x5c3b1c, 1.3, 1.45, z); t.rotation.z = -0.35 }
-    mk(g, new THREE.SphereGeometry(0.12, 8, 6), N(0xff2b2b), 1.38, 0.8, 0, false)
-    for (const x of [-0.55, 0.55]) for (const z of [-0.3, 0.3]) bx(g, 0.3, 0.6, 0.3, shade(c, -0.08), x, 0, z)
-    bx(g, 1.3, 0.12, 0.7, 0xc0392b, -0.1, 1.5, 0) // (the red saddle blanket)
+    bx(g, 1.15, 0.45, 0.42, c, 0, 0.5, 0)
+    bx(g, 0.22, 0.5, 0.22, shade(c, 0.04), 0.62, 0.78, 0).rotation.z = -0.35
+    bx(g, 0.34, 0.24, 0.24, shade(c, 0.06), 0.86, 1.18, 0)
+    mk(g, new THREE.SphereGeometry(0.075, 8, 6), N(0xff2b2b), 1.05, 1.17, 0, false)
+    for (const z of [-0.08, 0.08]) {
+      const a = mk(g, new THREE.ConeGeometry(0.035, 0.46, 5), 0x4a3018, 0.8, 1.5, z * 2); a.rotation.x = z * 5
+      const a2 = mk(g, new THREE.ConeGeometry(0.028, 0.26, 5), 0x4a3018, 0.84, 1.6, z * 4.2); a2.rotation.x = z * 9; a2.rotation.z = -0.5
+    }
+    for (const x of [-0.42, 0.42]) for (const z of [-0.14, 0.14]) bx(g, 0.1, 0.5, 0.1, shade(c, -0.1), x, 0, z)
+    bx(g, 0.14, 0.14, 0.14, 0xffffff, -0.62, 0.62, 0)
+    bx(g, 0.9, 0.08, 0.44, 0xc0392b, 0, 0.74, 0) // (a red harness blanket)
     g.scale.setScalar(sc)
-    g.userData = { y: 0.08, bob: 0.035 }
+    g.userData = { y: 0.08, bob: 0.04 }
     return g
   }
-  const saber = () => {
+  // Santa on his sleigh: red sleigh body on gold runners, a sack of gifts, Santa in his hat and beard
+  const santaSleigh = () => {
+    const g = G()
+    for (const z of [-0.3, 0.3]) bx(g, 1.7, 0.06, 0.06, 0xf2c94c, 0.05, 0, z)
+    bx(g, 1.4, 0.3, 0.7, 0xc0392b, 0, 0.1, 0)
+    bx(g, 1.42, 0.06, 0.72, 0xffffff, 0, 0.36, 0)
+    bx(g, 0.5, 0.42, 0.46, 0x6b4a2b, -0.5, 0.4, 0) // the sack
+    bx(g, 0.34, 0.34, 0.3, 0xc0392b, 0.15, 0.42, 0)
+    bx(g, 0.36, 0.06, 0.32, 0x111111, 0.15, 0.55, 0)
+    mk(g, new THREE.SphereGeometry(0.15, 10, 8), 0xf1c27d, 0.15, 0.92, 0)
+    mk(g, new THREE.SphereGeometry(0.13, 10, 8), 0xffffff, 0.22, 0.84, 0)
+    mk(g, new THREE.ConeGeometry(0.15, 0.3, 8), 0xd62828, 0.15, 1.18, 0)
+    mk(g, new THREE.SphereGeometry(0.05, 6, 5), 0xffffff, 0.15, 1.34, 0)
+    bx(g, 0.5, 0.3, 0.3, 0x2f8f5a, 1.2, 0.05, 0) // a green gift on the front
+    g.userData = { y: 0.04, bob: 0.03 }
+    return g
+  }
+  // a cart of wrapped presents
+  const giftCart = () => {
     const g = G()
     bx(g, 1.1, 0.42, 0.42, 0x2f8f5a, 0, 0.3, 0)
     bx(g, 0.4, 0.4, 0.4, 0xc0392b, 0.7, 0.45, 0)
     bx(g, 0.1, 0.44, 0.44, 0xf2c94c, 0, 0.3, 0)
+    bx(g, 0.1, 0.44, 0.44, 0xf2c94c, 0.7, 0.45, 0)
     for (const x of [-0.4, 0.4]) for (const z of [-0.15, 0.15]) bx(g, 0.12, 0.3, 0.12, 0x5c3b1c, x, 0, z)
     bx(g, 0.5, 0.08, 0.08, 0xf2c94c, -0.8, 0.55, 0)
     g.userData = { y: 0.08, bob: 0.05 }
-    return g
-  }
-  const sled = () => {
-    const g = G()
-    bx(g, 1.5, 0.08, 0.7, 0x8b5a2b, 0, 0.14, 0)
-    for (const z of [-0.3, 0.3]) bx(g, 1.7, 0.06, 0.06, 0x5c3b1c, 0.05, 0, z)
-    bx(g, 0.6, 0.4, 0.5, 0xd8232a, -0.3, 0.22, 0)
-    bx(g, 0.5, 0.18, 0.4, 0x2f8f5a, -0.3, 0.6, 0)
-    bx(g, 0.5, 0.3, 0.3, 0xf2c94c, 1.2, 0.05, 0)
     return g
   }
 
@@ -174,7 +189,7 @@ export function makeMaps(h) {
     city: () => [makeCar(0xf4c430), makeCar(0xe63946), makeCar(0x2a9d8f), makeCar(0xffffff), makeCar(0x8e5bd9), makeCar(0x3b82f6), makeVan(), makeVan(0xfde68a), makeBus(), makeTruck(), makeBus(0xd9534f)],
     lego: () => [legoCar(0xe3000b), legoCar(0xffd500), legoCar(0x0057b8), legoCar(0x00852b), legoCar(0xffffff), legoCar(0xff7a00), makeBus(0xe3000b), makeTruck(0xffd500), makeVan(0x0057b8)],
     japan: () => [train(), kei(0xffb7d5), kei(0xa8e6cf), kei(0xfff3b0), kei(0xffffff), makeCar(0x2e8b57), makeCar(0xf4c430), ramen(), kei(0x9ad0ff), train()],
-    ice: () => [mammoth(), mammoth(0x8d6e4a, 0.8), mammoth(0x6b4a2b, 1.1), saber(), saber(), sled(), sled(), mammoth(0x9a7b55, 0.6)],
+    ice: () => [santaSleigh(), reindeer(), reindeer(0x8d6e4a, 0.85), santaSleigh(), reindeer(0xb08a5a, 0.95), giftCart(), santaSleigh(), reindeer(0x7a5230, 1.05)],
     wire: () => vehicles.city(),
     court: () => [ball(), ball(), ball(), makeBus(0xc0392b), makeBus(0x1d3f8a), makeCar(0xffffff), ball()],
   }
@@ -279,7 +294,7 @@ export function makeMaps(h) {
     ice: T('ice', {
       c: { base: 0xb7d9ee, base2: 0x8fc0de, grass: 0xf4f9fd, pad: 0xe3f1fa, road: 0x8fa3bf, lampPole: 0xc0392b, lampGlow: 0xffd24d, water: 0x9fdcf7, round: 0xeaf6fd, pine: 0x1f7a46, blossom: 0xffffff, trunk: 0x5c3b1c, park: 0xe6f4fb, court: 0xd7ecf8, courtLine: 0xffffff, plaza: 0xe6f4fb, stone: 0x9aa5b1, grove: 0xe6f4fb, bench: 0x6e4623, crate: [0xc0392b, 0x2f8f5a, 0xf2c94c], empty: 0xc9dfee },
       sun: [0xf2f8ff, 2.2], hemi: [0xffffff, 0xb7d9ee, 1.6], glowLamps: true,
-      people: { coats: [0xc0392b, 0x2f8f5a, 0xffffff, 0xf2c94c, 0xd62828, 0x1f6f43], pants: [0x2b2d42, 0x4a403a, 0x1d3557], hat: 0xd62828, shorts: false },
+      people: { coats: [0xc0392b, 0x2f8f5a, 0xffffff, 0xf2c94c, 0xd62828, 0x1f6f43], pants: [0x2b2d42, 0x4a403a, 0x1d3557], hat: 0xd62828, shorts: false, xmas: true },
       tree: 'snow', dashes: false, landmarks: { 1: land.xmasTree, 2: land.giftPile },
     }),
     wire: T('wire', {
