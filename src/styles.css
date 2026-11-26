@@ -239,3 +239,26 @@ select.field { appearance: none; -webkit-appearance: none; }
 .switch.on i { transform: translateX(20px); background: #fff; }
 
 .mode-btn { right: 72px; }
+
+/* the opening splashes, one for every map (see splashes.jsx). the bricks, the ball, the sleigh and the needles all use these */
+.splash.full { background: var(--sbg, var(--bg)); }
+.splash.full svg { width: min(84vw, 420px); }
+.sp-drop { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
+.go .sp-drop { animation: spDrop .55s cubic-bezier(.3,1.5,.5,1) var(--delay, 0s) both; }
+@keyframes spDrop { 0% { opacity: 0; transform: translateY(-120px) rotate(var(--rot, 0deg)); } 15% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+.sp-pop { opacity: 0; transform-box: fill-box; transform-origin: 50% 50%; }
+.go .sp-pop { animation: spPop .4s cubic-bezier(.3,1.6,.5,1) var(--delay, 0s) both; }
+@keyframes spPop { 0% { opacity: 0; transform: scale(.2); } 100% { opacity: 1; transform: none; } }
+.sp-fade { opacity: 0; }
+.go .sp-fade { animation: spFade .5s ease var(--delay, 0s) both; }
+@keyframes spFade { to { opacity: 1; } }
+.sp-ball { transform-box: fill-box; transform-origin: 50% 100%; opacity: 0; }
+.go .sp-ball { animation: spBall 1.3s cubic-bezier(.4,0,.6,1) var(--delay, 0s) both; }
+@keyframes spBall { 0% { opacity: 1; transform: translateY(-190px); } 32% { opacity: 1; transform: translateY(0); } 48% { opacity: 1; transform: translateY(-52px); } 62% { transform: translateY(0); } 74% { transform: translateY(-20px); } 84% { transform: translateY(0); } 92% { transform: translateY(-6px); } 100% { opacity: 1; transform: none; } }
+.sp-ride { transform: translateX(-260px); }
+.go .sp-ride { animation: spRide 1.6s cubic-bezier(.2,.7,.3,1) var(--delay, 0s) both; }
+@keyframes spRide { to { transform: none; } }
+.sp-snow { opacity: 0; }
+.go .sp-snow { animation: spSnow 3s linear var(--delay, 0s) both; }
+@keyframes spSnow { 0% { opacity: 0; transform: translateY(-20px); } 15% { opacity: .9; } 100% { opacity: .9; transform: translateY(230px); } }
+@media (prefers-reduced-motion: reduce) { .sp-drop, .sp-pop, .sp-ball, .sp-ride, .sp-snow { animation-duration: .01s !important; animation-delay: 0s !important; } }

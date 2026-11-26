@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import 'lenis/dist/lenis.css'
 import Splash from './components/Splash.jsx'
+import SplashTester from './components/SplashTester.jsx'
 import Icon from './components/Icon.jsx'
 import Toast from './components/Toast.jsx'
 import Home from './components/Home.jsx'
@@ -21,6 +22,11 @@ import { StatusBar } from '@capacitor/status-bar'
 const TABS = [['home', 'city', 'State'], ['analytics', 'chart', 'Analytics'], null, ['history', 'receipt', 'History'], ['profile', 'user', 'Profile']]
 
 export default function App() {
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('splashes')) return <SplashTester />
+  return <MainApp />
+}
+
+function MainApp() {
   const s = useStore()
   const [splash, setSplash] = useState(!new URLSearchParams(location.search).has('nosplash'))
   const [tab, setTab] = useState('home')
@@ -111,7 +117,7 @@ export default function App() {
       )}
       {toast && <Toast key={toast.n} toast={toast} onGone={() => setToast((x) => (x && x.n === toast.n ? null : x))} />}
       {screen === 'email' && <SignIn onSkip={skipSignIn} />}
-      {splash && <Splash onDone={() => setSplash(false)} />}
+      {splash && <Splash map={s.map || 'city'} onDone={() => setSplash(false)} />}
     </div>
   )
 }
