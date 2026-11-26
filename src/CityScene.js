@@ -685,7 +685,7 @@ export class CityScene {
     this.world.add(g)
   }
 
-  // Christmas clothes for the people of the Santy map: Santa suit, elf, snow coat with a scarf, reindeer headband
+  // Christmas clothes for the people of the Santy map (no hats): Santa suit, elf outfit, snow coat with a scarf, a green scarf and brown coat
   dressForChristmas(p, look) {
     const u = p.userData
     const set = (mm, col) => mm.material.color.set(col)
@@ -696,14 +696,11 @@ export class CityScene {
       { coat: 0x8b5a2b, pants: 0x2b2d42, hat: 0xffffff, scarf: 0x2f8f5a, pom: true, antlers: true },
     ][look]
     set(u.torso, L.coat); u.sleeves.forEach((mm) => set(mm, L.coat)); u.thighs.forEach((mm) => set(mm, L.pants)); u.shins.forEach((mm) => set(mm, L.pants))
-    u.hat.visible = true; set(u.hat, L.hat)
+    u.hat.visible = false // (bare heads: no hats in Santy)
     if (L.trim) bx(p, 0.37, 0.06, 0.23, 0xffffff, 0, 0.42, 0) // fur along the hem of the coat
     if (L.belt) bx(p, 0.36, 0.05, 0.22, 0x111111, 0, 0.62, 0)
     if (L.beard) mk(p, new THREE.SphereGeometry(0.1, 8, 6), 0xffffff, 0, 0.93, 0.07)
     if (L.scarf) { bx(p, 0.4, 0.08, 0.26, L.scarf, 0, 0.8, 0); bx(p, 0.08, 0.26, 0.05, L.scarf, 0.1, 0.56, 0.14) }
-    if (L.pom) mk(p, new THREE.SphereGeometry(0.05, 6, 5), 0xffffff, 0, 1.2, 0)
-    if (L.cone) mk(p, new THREE.ConeGeometry(0.11, 0.3, 6), L.hat, 0, 1.3, 0)
-    if (L.antlers) for (const sx of [-1, 1]) { const a = mk(p, new THREE.ConeGeometry(0.025, 0.2, 4), 0x5c3b1c, sx * 0.1, 1.24, 0); a.rotation.z = -sx * 0.4 }
   }
 
   tree(x, z, sc = 1, type = 'r') {
