@@ -11,7 +11,7 @@ import { SYNCED_SETTINGS, pick } from './sync/engine.js'
 const KEY = 'dollar-q:v1'
 
 export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other', 'Gulliver']
-export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot']
+export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot', 'hospital']
 export const PALETTE = ['#e5383b', '#3a86ff', '#8338ec', '#b08968', '#2d936c', '#ff7f50', '#8d6e63', '#118ab2', '#f4a259', '#d62f8b', '#4361ee', '#e056a0']
 export const MAX_COUNTIES = 12 // the map has 12 lots. (the city can grow a second ring for up to 24, see BIG_CITY in CityScene.js, but that is switched off)
 export const MAX_ACCOUNTS = 5
@@ -26,7 +26,7 @@ export const DEFAULT_COUNTIES = [
   county('Investments', 'Gulliver', 'dome', 3, 'bank'),
   county('Groceries', 'Food', 'market', 4, 'cart'),
   county('Restaurants', 'Food', 'cafe', 5, 'fork'),
-  county('Dr.', 'Other', 'tower', 6, 'medical'), // (doctors, medicine, hospital)
+  county('Dr.', 'Other', 'hospital', 6, 'medical'), // (doctors, medicine: a pharmacy that grows into a big hospital)
   county('Transit', 'Other', 'depot', 7, 'bus'),
   county('Banking', 'Gulliver', 'tower', 8, 'bank'),
   county('Entertainment', 'Media', 'cinema', 9, 'film'),

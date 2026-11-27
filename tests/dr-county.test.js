@@ -7,6 +7,7 @@ describe('the Dr. county', () => {
     const dr = DEFAULT_COUNTIES.find((c) => c.name === 'Dr.')
     expect(dr).toBeTruthy()
     expect(dr.icon).toBe('medical')
+    expect(dr.style).toBe('hospital')
     expect(DEFAULT_COUNTIES.some((c) => c.name === 'Cafes')).toBe(false)
   })
 
