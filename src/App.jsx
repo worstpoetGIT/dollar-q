@@ -33,6 +33,9 @@ function MainApp() {
   // the icon on the home screen follows the map: it changes when the map is changed (not when the app opens, which would show the phone's "icon changed" message each time)
   const lastMap = useRef(s.map)
   useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city') } }, [s.map])
+  // and once when the splash is over: an app that was updated while the map was already, say, Wireframe still has the old icon. nothing happens (and no message from the phone) when the icon is already right.
+  const iconSynced = useRef(false)
+  useEffect(() => { if (!splash && !iconSynced.current) { iconSynced.current = true; setAppIcon(s.map || 'city') } }, [splash]) // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState('home')
   const [sub, setSub] = useState(null)
   const [adding, setAdding] = useState(null)
