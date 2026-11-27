@@ -16,10 +16,10 @@ const audioContext = () => {
 }
 
 // phones only let a page make sound after the person has touched it, and the sound has to be switched on right in the touch. so on every touch or key press
-// the audio is woken up (and a silent blip is played), and on an iPhone the page asks for the "playback" kind of sound, which the silent switch does not mute.
+// the audio is woken up (and a silent blip is played), and on an iPhone the app itself (AppDelegate.swift) sets the sound to play even on silent and to mix with music that is already playing.
 export function unlockAudio() {
   try {
-    if (typeof navigator !== 'undefined' && navigator.audioSession) navigator.audioSession.type = 'playback'
+    if (typeof navigator !== 'undefined' && navigator.audioSession) navigator.audioSession.type = 'auto' // leave the kind of sound to the app (on an iPhone it plays through the silent switch and mixes with music)
     const c = audioContext()
     if (!c) return
     if (c.state !== 'running') c.resume().catch(() => {})
