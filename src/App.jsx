@@ -16,7 +16,7 @@ import * as store from './store.js'
 import { useStore, setState, runFixed, ready } from './store.js'
 import { startSync, useSyncStatus } from './sync/service.js'
 import { fmt } from './util.js'
-import { setAppIcon } from './appIcon.js'
+import { setAppIcon, lastIconResult } from './appIcon.js'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar } from '@capacitor/status-bar'
 
@@ -30,17 +30,21 @@ export default function App() {
 function MainApp() {
   const s = useStore()
   const [splash, setSplash] = useState(!new URLSearchParams(location.search).has('nosplash'))
-  // the icon on the home screen follows the map: it changes when the map is changed (not when the app opens, which would show the phone's "icon changed" message each time)
-  const lastMap = useRef(s.map)
-  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city') } }, [s.map])
-  // and once when the splash is over: an app that was updated while the map was already, say, Wireframe still has the old icon. nothing happens (and no message from the phone) when the icon is already right.
-  const iconSynced = useRef(false)
-  useEffect(() => { if (!splash && !iconSynced.current) { iconSynced.current = true; setAppIcon(s.map || 'city') } }, [splash]) // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState('home')
   const [sub, setSub] = useState(null)
   const [adding, setAdding] = useState(null)
   const [saved, setSaved] = useState(null)
   const [toast, setToast] = useState(null)
+  // the icon on the home screen follows the map: it changes when the map is changed, and once when the app opens (the phone only shows its own message when the icon really has to change).
+  // for now a short note says what happened, so a phone that cannot switch the icon tells why
+  const lastMap = useRef(s.map)
+  const iconSynced = useRef(false)
+  const switchIcon = (map) => setAppIcon(map || 'city').then(() => {
+    const r = lastIconResult()
+    if (Capacitor.isNativePlatform() && r && r.message !== 'already this icon') setToast({ n: Date.now(), text: r.ok ? 'Icon ' + r.message : 'Icon failed', sub: r.ok ? r.name || 'main icon' : r.message })
+  })
+  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; switchIcon(s.map) } }, [s.map]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!splash && !iconSynced.current) { iconSynced.current = true; switchIcon(s.map) } }, [splash]) // eslint-disable-line react-hooks/exhaustive-deps
   const [histCounty, setHistCounty] = useState(null)
   // which of the first pages to show (see firstRun.js). "Not now" is remembered, but only keeps the email page away for an app that is already set up.
   const syncState = useSyncStatus()
