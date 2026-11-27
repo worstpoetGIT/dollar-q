@@ -51,6 +51,14 @@ describe('the home screen icon follows the map', () => {
     expect((manifest.match(/<activity-alias/g) || []).length).toBe(MAP_LIST.length)
   })
 
+  it('on iPhone the first screen is the one that carries the icon plugin (the scene delegate must not make the plain Capacitor one)', () => {
+    const scene = readFileSync('ios/App/App/SceneDelegate.swift', 'utf8')
+    expect(scene).toContain('MainViewController()')
+    expect(scene).not.toContain('= CAPBridgeViewController()')
+    expect(readFileSync('ios/App/App/AppDelegate.swift', 'utf8')).toContain('registerPluginInstance(AppIconPlugin())')
+    expect(readFileSync('ios/App/App/AppDelegate.swift', 'utf8')).toContain('call.getBool("force")') // (a change of map always asks the phone, so going back to the main icon works)
+  })
+
   it('without a phone around, switching the icon does nothing and does not throw', async () => {
     const { setAppIcon } = await import('../src/appIcon.js')
     await expect(setAppIcon('lego')).resolves.toBe(false)

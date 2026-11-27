@@ -30,14 +30,16 @@ export default function App() {
 function MainApp() {
   const s = useStore()
   const [splash, setSplash] = useState(!new URLSearchParams(location.search).has('nosplash'))
-  // the icon on the home screen follows the map: it changes when the map is changed (not when the app opens, which would show the phone's "icon changed" message each time)
-  const lastMap = useRef(s.map)
-  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city') } }, [s.map])
   const [tab, setTab] = useState('home')
   const [sub, setSub] = useState(null)
   const [adding, setAdding] = useState(null)
   const [saved, setSaved] = useState(null)
   const [toast, setToast] = useState(null)
+  // the icon on the home screen follows the map: it changes when the map is changed, and once when the app opens (the phone only shows its own message when the icon really has to change)
+  const lastMap = useRef(s.map)
+  const iconSynced = useRef(false)
+  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city', { force: true }) } }, [s.map])
+  useEffect(() => { if (!splash && !iconSynced.current) { iconSynced.current = true; setAppIcon(s.map || 'city') } }, [splash]) // eslint-disable-line react-hooks/exhaustive-deps
   const [histCounty, setHistCounty] = useState(null)
   // which of the first pages to show (see firstRun.js). "Not now" is remembered, but only keeps the email page away for an app that is already set up.
   const syncState = useSyncStatus()
