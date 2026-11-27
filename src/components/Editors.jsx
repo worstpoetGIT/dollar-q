@@ -6,7 +6,7 @@ import { prevYm } from '../store.js'
 import { ymOf } from '../util.js'
 
 export const STYLE_LABEL = { house: 'House', tower: 'Tower', shop: 'Shop', dome: 'Bank', market: 'Market', cafe: 'Cafe', cinema: 'Cinema', tech: 'Tech', depot: 'Depot', hospital: 'Hospital' }
-export const STYLE_ICON = { house: 'home', tower: 'bolt', shop: 'tag', dome: 'bank', market: 'cart', cafe: 'coffee', cinema: 'film', tech: 'chip', depot: 'bus', hospital: 'medical' }
+export const STYLE_ICON = { house: 'home', tower: 'bolt', shop: 'tag', dome: 'bank', market: 'cart', cafe: 'coffee', cinema: 'film', tech: 'chip', depot: 'bus', hospital: 'cross' }
 export const countyIcon = (c) => c.icon || STYLE_ICON[c.style] || 'tag'
 
 export function CountiesEditor({ s }) {

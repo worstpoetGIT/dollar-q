@@ -26,7 +26,7 @@ export const DEFAULT_COUNTIES = [
   county('Investments', 'Gulliver', 'dome', 3, 'bank'),
   county('Groceries', 'Food', 'market', 4, 'cart'),
   county('Restaurants', 'Food', 'cafe', 5, 'fork'),
-  county('Dr.', 'Other', 'hospital', 6, 'medical'), // (doctors, medicine: a pharmacy that grows into a big hospital)
+  county('Dr.', 'Other', 'hospital', 6, 'cross'), // (doctors, medicine; a cross: a pharmacy that grows into a big hospital)
   county('Transit', 'Other', 'depot', 7, 'bus'),
   county('Banking', 'Gulliver', 'tower', 8, 'bank'),
   county('Entertainment', 'Media', 'cinema', 9, 'film'),
@@ -64,7 +64,7 @@ const initial = () => ({
 const MAX_AMOUNT = 999999999.99
 const MAX_EXPENSES = 50000
 const MAX_FIXED = 50
-const ICONS = new Set(['home', 'bolt', 'repeat', 'bank', 'cart', 'fork', 'coffee', 'bus', 'dots', 'film', 'chip', 'shirt', 'tag', 'city', 'medical'])
+const ICONS = new Set(['home', 'bolt', 'repeat', 'bank', 'cart', 'fork', 'coffee', 'bus', 'dots', 'film', 'chip', 'shirt', 'tag', 'city', 'cross'])
 const str = (v, max, fallback = '') => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, max) : fallback)
 const idOf = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(v) ? v : null)
 const num = (v, min, max, fallback) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback)

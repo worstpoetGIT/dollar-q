@@ -6,13 +6,13 @@ describe('the Dr. county', () => {
     expect(DEFAULT_COUNTIES).toHaveLength(12)
     const dr = DEFAULT_COUNTIES.find((c) => c.name === 'Dr.')
     expect(dr).toBeTruthy()
-    expect(dr.icon).toBe('medical')
+    expect(dr.icon).toBe('cross')
     expect(dr.style).toBe('hospital')
     expect(DEFAULT_COUNTIES.some((c) => c.name === 'Cafes')).toBe(false)
   })
 
-  it('the medical icon survives saving and loading', () => {
+  it('the cross icon survives saving and loading', () => {
     const s = sanitize({ v: 1, entered: true, setupDone: true, counties: DEFAULT_COUNTIES, accounts: [], expenses: [], fixed: [] })
-    expect(s.counties.find((c) => c.name === 'Dr.').icon).toBe('medical')
+    expect(s.counties.find((c) => c.name === 'Dr.').icon).toBe('cross')
   })
 })

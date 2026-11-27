@@ -12,7 +12,7 @@ const P = {
   chip: 'M7 7h10v10H7zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4',
   shirt: 'M8 3 3 6l2.5 4L8 9v12h8V9l2.5 1L21 6l-5-3a4 4 0 0 1-8 0z',
   tag: 'M3 12V4h8l10 10-8 8zM7.5 8h.01',
-  medical: 'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
+  cross: 'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
   city: 'M4 21V8l6-3v16M10 21V10l10 3v8M3 21h18M7 11h.01M7 15h.01M14 15h.01M17 16h.01',
   chart: 'M5 21V12M12 21V4M19 21v-6',
   receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6',
