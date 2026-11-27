@@ -16,7 +16,7 @@ import * as store from './store.js'
 import { useStore, setState, runFixed, ready } from './store.js'
 import { startSync, useSyncStatus } from './sync/service.js'
 import { fmt } from './util.js'
-import { setAppIcon, lastIconResult } from './appIcon.js'
+import { setAppIcon } from './appIcon.js'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar } from '@capacitor/status-bar'
 
@@ -35,16 +35,11 @@ function MainApp() {
   const [adding, setAdding] = useState(null)
   const [saved, setSaved] = useState(null)
   const [toast, setToast] = useState(null)
-  // the icon on the home screen follows the map: it changes when the map is changed, and once when the app opens (the phone only shows its own message when the icon really has to change).
-  // for now a short note says what happened, so a phone that cannot switch the icon tells why
+  // the icon on the home screen follows the map: it changes when the map is changed, and once when the app opens (the phone only shows its own message when the icon really has to change)
   const lastMap = useRef(s.map)
   const iconSynced = useRef(false)
-  const switchIcon = (map) => setAppIcon(map || 'city').then(() => {
-    const r = lastIconResult()
-    if (Capacitor.isNativePlatform() && r && r.message !== 'already this icon') setToast({ n: Date.now(), text: r.ok ? 'Icon ' + r.message : 'Icon failed', sub: r.ok ? r.name || 'main icon' : r.message })
-  })
-  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; switchIcon(s.map) } }, [s.map]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!splash && !iconSynced.current) { iconSynced.current = true; switchIcon(s.map) } }, [splash]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (lastMap.current !== s.map) { lastMap.current = s.map; setAppIcon(s.map || 'city') } }, [s.map])
+  useEffect(() => { if (!splash && !iconSynced.current) { iconSynced.current = true; setAppIcon(s.map || 'city') } }, [splash]) // eslint-disable-line react-hooks/exhaustive-deps
   const [histCounty, setHistCounty] = useState(null)
   // which of the first pages to show (see firstRun.js). "Not now" is remembered, but only keeps the email page away for an app that is already set up.
   const syncState = useSyncStatus()
