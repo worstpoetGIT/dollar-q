@@ -23,14 +23,15 @@ let last = null
 export const lastIconResult = () => last
 
 // switch the home screen icon to the one of the map. never throws: a phone that cannot do it just keeps its icon (and lastIconResult says why).
-export async function setAppIcon(mapId) {
+// force: the person just changed the map, so the phone is asked even when it believes the icon is already the right one (the main Classic icon came back wrong without this)
+export async function setAppIcon(mapId, { force = false } = {}) {
   let name = ''
   try {
     if (!Capacitor.isNativePlatform()) return false
     const platform = Capacitor.getPlatform()
     if (platform !== 'ios' && platform !== 'android') return false
     name = iconNameFor(mapId, platform)
-    const r = await AppIcon.setIcon({ name })
+    const r = await AppIcon.setIcon({ name, force })
     last = { map: mapId, name, ok: true, message: r && r.changed === false ? 'already this icon' : 'changed' }
     return true
   } catch (e) {

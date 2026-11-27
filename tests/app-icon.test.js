@@ -56,6 +56,7 @@ describe('the home screen icon follows the map', () => {
     expect(scene).toContain('MainViewController()')
     expect(scene).not.toContain('= CAPBridgeViewController()')
     expect(readFileSync('ios/App/App/AppDelegate.swift', 'utf8')).toContain('registerPluginInstance(AppIconPlugin())')
+    expect(readFileSync('ios/App/App/AppDelegate.swift', 'utf8')).toContain('call.getBool("force")') // (a change of map always asks the phone, so going back to the main icon works)
   })
 
   it('without a phone around, switching the icon does nothing and does not throw', async () => {

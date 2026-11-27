@@ -56,10 +56,11 @@ public class AppIconPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setIcon(_ call: CAPPluginCall) {
         let wanted = call.getString("name") ?? ""
         let target: String? = wanted.isEmpty ? nil : wanted
+        let force = call.getBool("force") ?? false // (the person just changed the map: always ask the phone, even if it thinks the icon is right already)
         DispatchQueue.main.async {
             let app = UIApplication.shared
             guard app.supportsAlternateIcons else { call.resolve(["changed": false]); return }
-            if app.alternateIconName == target { call.resolve(["changed": false]); return }
+            if !force && app.alternateIconName == target { call.resolve(["changed": false]); return }
             app.setAlternateIconName(target) { error in
                 if let error = error { call.reject(error.localizedDescription) } else { call.resolve(["changed": true]) }
             }
