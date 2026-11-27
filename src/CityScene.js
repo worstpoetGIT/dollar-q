@@ -894,6 +894,7 @@ export class CityScene {
     const pairs = []
     for (const c of this.cars) {
       if (!c.active || c.special || c.crash || c.passing || c.arc || c.waitMerge || c.road !== r.axis || c.turn !== 'straight' || Math.abs(c.lat - c.lane) > 0.1 || c.dir * c.t < 2.2) continue
+      if (this.T.id === 'ice' && !(c.car && c.car.userData && c.car.userData.animal)) continue // (Santy: it is a reindeer that hits somebody)
       for (const w of this.walkers) {
         if (!w.active || w.down || w.watch || w.axis !== r.axis || w.waiting || w.crossing || w.inPlaza || Math.sign(w.lat) !== Math.sign(c.lat) || Math.abs(w.lat) < 1.6 || Math.abs(w.lat - w.lane) > 0.03 || Math.abs(w.goal - w.lane) > 0.03 || w.passing || Math.sign(w.t) !== Math.sign(c.t)) continue // (the outer lane: the car goes up on the footpath, clear of the road and of the ambulance's lane)
         const gap = (w.t - c.t) * c.dir
@@ -942,6 +943,11 @@ export class CityScene {
     }
     u.hat.visible = kind === 'officer'
     if (kind === 'officer') u.hat.material.color.set(0x0b1530)
+    if (kind === 'officer' && this.T.id === 'ice') { // in Santy the police is Santa: red suit, belt, white beard, his red hat with the white bobble
+      this.dressForChristmas(p, 0)
+      u.hat.visible = true; u.hat.material.color.set(0xd62828)
+      mk(p, new THREE.SphereGeometry(0.05, 6, 5), 0xffffff, 0, 1.2, 0)
+    }
     if (kind === 'medic') { u.hat.visible = true; u.hat.material.color.set(0xd62828) }
     p.scale.setScalar(0.001)
     this.world.add(p)
@@ -1091,6 +1097,7 @@ export class CityScene {
         A.meetLat = A.s * Math.max(1.8, Math.abs(A.car.lat))
         const meet = this.at(A, A.car.t - A.dir * (A.car.hl + 0.6), A.meetLat)
         A.driver = this.makeActor('driver', meet[0], meet[1], 0)
+        if (this.T.id === 'ice') A.driver.hidden = true // (a reindeer has no driver: Santa comes for the reindeer itself)
         A.officer = this.makeActor('officer', door[0], door[1], 0)
         A.officer.pts = [this.at(A, A.car.t - A.dir * (A.car.hl + 1.1), A.meetLat)]
         A.actors.push(A.driver, A.officer)
@@ -1098,13 +1105,25 @@ export class CityScene {
       } else if (P.stage === 'walk') {
         if (!A.officer.pts.length) {
           P.hold += dt
-          if (P.hold > 1) { // both walk to the police car (the officer ahead, the driver behind, so they never cross)
+          if (P.hold > 1 && this.T.id === 'ice') { A.taking = 0; P.stage = 'take' } // (Santy: Santa has the reindeer by the rein)
+          else if (P.hold > 1) { // both walk to the police car (the officer ahead, the driver behind, so they never cross)
             const door = this.doorOf(A, P, false)
             const [dt2, dl2] = this.tOf(A, door[0], door[1])
             A.officer.pts = [this.at(A, dt2 - A.dir * 0.35, dl2)]
             A.driver.pts = [this.at(A, dt2 + A.dir * 0.35, dl2)]
             P.stage = 'escort'
           }
+        }
+      } else if (P.stage === 'take') { // Santa takes the reindeer away: it fades out beside him (it goes with him on the police sleigh), then he walks to the police car
+        A.taking += dt / 1.2
+        A.car.takenK = Math.max(0, 1 - A.taking)
+        if (A.taking >= 1) {
+          A.car.takenK = undefined; A.car.active = false; A.car.car.visible = false; this.fadeCar(A.car, 1)
+          endCrash(A.car); A.carFree = true
+          const door = this.doorOf(A, P, false)
+          const [dt2, dl2] = this.tOf(A, door[0], door[1])
+          A.officer.pts = [this.at(A, dt2 - A.dir * 0.35, dl2)]
+          P.stage = 'escort'
         }
       } else if (P.stage === 'escort') {
         if (!A.driver.pts.length) A.driver.hidden = true
@@ -2320,7 +2339,7 @@ export class CityScene {
       const pose = carPose(c) // also right in the middle of a turn
       c.car.position.set(pose.x, vy, pose.z)
       // at the edge of the board vehicles fade out as they leave and fade in as they arrive (nothing is cut off, nothing hangs in the air outside)
-      const k = Math.max(0, Math.min(1, (this.E + 0.2 - Math.max(Math.abs(pose.x), Math.abs(pose.z))) / (c.hl + 0.8)))
+      const k = Math.max(0, Math.min(1, (this.E + 0.2 - Math.max(Math.abs(pose.x), Math.abs(pose.z))) / (c.hl + 0.8))) * (c.takenK === undefined ? 1 : c.takenK)
       this.fadeCar(c, k)
       if (k < 0.02) c.car.visible = false
       c.car.rotation.y = Math.atan2(-pose.hz, pose.hx)

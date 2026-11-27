@@ -152,7 +152,7 @@ export function makeMaps(h) {
     bx(g, 0.14, 0.14, 0.14, 0xffffff, -0.62, 0.62, 0)
     bx(g, 0.9, 0.08, 0.44, 0xc0392b, 0, 0.74, 0) // (a red harness blanket)
     g.scale.setScalar(sc)
-    g.userData = { y: 0.08, bob: 0.04 }
+    g.userData = { y: 0.08, bob: 0.04, animal: true } // (animal: in Santy the accident is always a reindeer that runs somebody down)
     return g
   }
   // Santa on his sleigh: red sleigh body on gold runners, a sack of gifts, Santa in his hat and beard
