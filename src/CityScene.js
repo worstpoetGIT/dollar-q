@@ -203,6 +203,73 @@ function kiosk(g, col) {
   bx(g, 0.7, 0.25, 0.5, 0xe8d5b5, 0.9, 0, 0.5)
 }
 
+// ---- the Dr. county: a hospital that grows with the spending. one pharmacy, then a clinic, then a hospital that gets wings and a super speciality tower with a helipad.
+// the same on every map (white, a red cross, glass), so a hospital is a hospital wherever you are
+// a flat cross on a white plate, facing front (+z): s is the size of the plate
+function medCross(g, x, y, z, s, col = 0xd8232a, plate = 0xffffff) {
+  bx(g, s, s, 0.08, plate, x, y, z)
+  bx(g, s * 0.26, s * 0.78, 0.1, col, x, y + s * 0.11, z + 0.01)
+  bx(g, s * 0.78, s * 0.26, 0.1, col, x, y + s * 0.37, z + 0.01)
+}
+// a helipad on a roof: a yellow disc with an H
+function helipad(g, x, y, z, r = 0.8) {
+  cyl(g, r, 0.07, 0xf2c94c, x, y, z, 14)
+  bx(g, 0.12, 0.02, r * 1.1, 0xffffff, x - r * 0.28, y + 0.07, z)
+  bx(g, 0.12, 0.02, r * 1.1, 0xffffff, x + r * 0.28, y + 0.07, z)
+  bx(g, r * 0.6, 0.02, 0.12, 0xffffff, x, y + 0.07, z)
+}
+const HOSPITAL = {
+  hospital(g, f, col) {
+    if (f <= 1) { // a pharmacy: one floor, a green awning and a green cross
+      wall(g, 3.2, 1.25, 2.4, 0xf2f5f7, 1, 3, 0, 0, 0, 0x6fb7a0)
+      bx(g, 3.3, 0.14, 2.5, 0x9aa0a8, 0, 1.25, 0)
+      const aw = bx(g, 3.2, 0.12, 0.9, 0x1faa59, 0, 0.92, 1.45); aw.rotation.x = 0.3
+      bx(g, 0.8, 0.95, 0.1, 0x3a4a5a, -0.9, 0, 1.22)
+      medCross(g, 0.9, 0.3, 1.22, 0.8, 0x1faa59)
+      medCross(g, 0, 1.4, 1.0, 0.6, 0x1faa59)
+    } else if (f <= 3) { // a clinic
+      const h = 0.9 + 0.85 * f
+      wall(g, 3.3, h, 2.6, 0xf2f5f7, f, 3, 0, 0, 0, 0x4a89b8)
+      bx(g, 3.4, 0.16, 2.7, 0x9aa0a8, 0, h, 0)
+      bx(g, 1.5, 0.1, 0.8, 0xd8232a, 0, 0.95, 1.55)
+      bx(g, 0.1, 0.95, 0.1, 0xd8232a, -0.7, 0, 1.85); bx(g, 0.1, 0.95, 0.1, 0xd8232a, 0.7, 0, 1.85)
+      bx(g, 0.9, 0.9, 0.1, 0x3a4a5a, 0, 0, 1.32)
+      medCross(g, 0, h - 0.95, 1.33, 0.95)
+    } else { // a hospital: a tall main block, a side wing, the big cross, and a helipad when it is big
+      const h = 0.9 + 0.8 * f
+      wall(g, 3.6, h, 2.8, 0xf2f5f7, f, 4, 0, 0, 0, 0x4a89b8)
+      bx(g, 3.7, 0.18, 2.9, 0x9aa0a8, 0, h, 0)
+      wall(g, 1.5, h * 0.55, 2.2, 0xe6ecf0, Math.max(1, Math.round(f * 0.55)), 2, 2.55, 0, -0.2, 0x4a89b8)
+      bx(g, 1.8, 0.14, 0.9, 0xd8232a, 0, 1.0, 1.65)
+      bx(g, 0.1, 1.0, 0.1, 0xd8232a, -0.85, 0, 1.95); bx(g, 0.1, 1.0, 0.1, 0xd8232a, 0.85, 0, 1.95)
+      bx(g, 1.0, 0.95, 0.1, 0x3a4a5a, 0, 0, 1.42)
+      medCross(g, 0, h - 1.5, 1.43, 1.3)
+      if (f >= 6) helipad(g, 0.7, h + 0.18, -0.4)
+    }
+  },
+  'hospital-a'(g, f) { // a wing with an ambulance bay
+    const h = 0.9 + 0.7 * f
+    wall(g, 2.8, h, 2.4, 0xeaf0f4, f, 3, 0, 0, 0, 0x4a89b8)
+    bx(g, 2.9, 0.14, 2.5, 0x9aa0a8, 0, h, 0)
+    bx(g, 2.4, 0.1, 1.0, 0xd8232a, 0, 0.9, 1.6)
+    bx(g, 0.1, 0.9, 0.1, 0xffffff, -1.1, 0, 2.05); bx(g, 0.1, 0.9, 0.1, 0xffffff, 1.1, 0, 2.05)
+    medCross(g, 0, h - 0.7, 1.23, 0.6)
+  },
+  'hospital-b'(g, f) { // the super speciality tower: tall, glass, a big cross and a helipad on top
+    const h = 1.6 + 1.3 * f
+    wall(g, 1.9, h, 1.9, 0xdbeaf5, f * 2, 2, 0, 0, 0, 0x3a86c8)
+    bx(g, 2.0, 0.16, 2.0, 0x8a919c, 0, h, 0)
+    medCross(g, 0, h * 0.55, 0.96, 1.0)
+    helipad(g, 0, h + 0.16, 0, 0.7)
+  },
+}
+// the booth of a pharmacy (the stage between the stakes and the first building)
+function pharmacyBooth(g) {
+  bx(g, 1.3, 0.95, 1.3, 0xf2f5f7, 0, 0, 0)
+  const aw = bx(g, 1.7, 0.1, 1.1, 0x1faa59, 0, 0.95, 0.55); aw.rotation.x = 0.3
+  medCross(g, 0, 0.2, 0.66, 0.55, 0x1faa59)
+}
+
 function makeCar(color) {
   const g = new THREE.Group()
   bx(g, 1.35, 0.38, 0.68, color, 0, 0.14, 0)
@@ -2020,17 +2087,18 @@ export class CityScene {
       const T = this.T
       const P = this.plan(L)
       const main = (f, style) => (g) => {
-        if (T.build) T.build(g, f, colN, style)
+        if (HOSPITAL[style]) HOSPITAL[style](g, f, colN) // (the Dr. county: the same hospital on every map)
+        else if (T.build) T.build(g, f, colN, style)
         else (STYLE_FN[style] || STYLE_FN.shop)(g, f, colN)
       }
-      const alt = T.build ? [c.style + '-a', c.style + '-b'] : [c.style === 'house' ? 'shop' : 'house', c.style === 'cafe' ? 'market' : 'cafe']
+      const alt = c.style === 'hospital' ? ['hospital-a', 'hospital-b'] : T.build ? [c.style + '-a', c.style + '-b'] : [c.style === 'house' ? 'shop' : 'house', c.style === 'cafe' ? 'market' : 'cafe']
       const look = c.style + '|' + c.color
       if (L === 0) want.sign = { sig: look, at: [0, 0, 0], sc: [1, 1], make: (g) => { cyl(g, 0.05, 0.9, 0x6b5a3e, 0, 0, 0, 5); bx(g, 0.9, 0.5, 0.06, colN, 0, 0.75, 0) } }
       if (P.found) want.found = { sig: look + (L === 1 ? ':stakes' : ''), at: [-0.55, 0, -0.55], sc: [1, 1], make: (g) => {
         bx(g, 2.3, 0.06, 2.3, 0x9aa0a8, 0, 0, 0)
         if (L === 1) for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) bx(g, 0.1, 0.5, 0.1, 0xf4b400, sx * 1.05, 0.06, sz * 1.05)
       } }
-      if (P.hut) want.hut = { sig: look, at: [-0.55, 0.07, -0.55], sc: [0.9, 0.9], make: (g) => (T.kiosk || kiosk)(g, colN) }
+      if (P.hut) want.hut = { sig: look, at: [-0.55, 0.07, -0.55], sc: [0.9, 0.9], make: (g) => (c.style === 'hospital' ? pharmacyBooth(g) : (T.kiosk || kiosk)(g, colN)) }
       if (P.M) want.M = { sig: look + ':' + P.M, at: [-0.55, 0.07, -0.55], sc: [0.62, 0.8], make: main(P.M, c.style) }
       if (P.extras) want.extras = { sig: look, at: [0, 0, 0], sc: [1, 1], make: (g) => {
         for (let k = 0; k < 5; k++) bx(g, 0.08, 0.36, 0.08, colN, -2.0 + k * 0.5, 0, 2.05)

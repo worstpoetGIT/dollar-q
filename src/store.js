@@ -11,7 +11,7 @@ import { SYNCED_SETTINGS, pick } from './sync/engine.js'
 const KEY = 'dollar-q:v1'
 
 export const GROUPS = ['Food', 'Home', 'Media', 'Shopping', 'Other', 'Gulliver']
-export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot']
+export const STYLES = ['house', 'tower', 'shop', 'dome', 'market', 'cafe', 'cinema', 'tech', 'depot', 'hospital']
 export const PALETTE = ['#e5383b', '#3a86ff', '#8338ec', '#b08968', '#2d936c', '#ff7f50', '#8d6e63', '#118ab2', '#f4a259', '#d62f8b', '#4361ee', '#e056a0']
 export const MAX_COUNTIES = 12 // the map has 12 lots. (the city can grow a second ring for up to 24, see BIG_CITY in CityScene.js, but that is switched off)
 export const MAX_ACCOUNTS = 5
@@ -26,7 +26,7 @@ export const DEFAULT_COUNTIES = [
   county('Investments', 'Gulliver', 'dome', 3, 'bank'),
   county('Groceries', 'Food', 'market', 4, 'cart'),
   county('Restaurants', 'Food', 'cafe', 5, 'fork'),
-  county('Cafes', 'Food', 'cafe', 6, 'coffee'),
+  county('Dr.', 'Other', 'hospital', 6, 'cross'), // (doctors, medicine; a cross: a pharmacy that grows into a big hospital)
   county('Transit', 'Other', 'depot', 7, 'bus'),
   county('Banking', 'Gulliver', 'tower', 8, 'bank'),
   county('Entertainment', 'Media', 'cinema', 9, 'film'),
@@ -64,7 +64,7 @@ const initial = () => ({
 const MAX_AMOUNT = 999999999.99
 const MAX_EXPENSES = 50000
 const MAX_FIXED = 50
-const ICONS = new Set(['home', 'bolt', 'repeat', 'bank', 'cart', 'fork', 'coffee', 'bus', 'dots', 'film', 'chip', 'shirt', 'tag', 'city'])
+const ICONS = new Set(['home', 'bolt', 'repeat', 'bank', 'cart', 'fork', 'coffee', 'bus', 'dots', 'film', 'chip', 'shirt', 'tag', 'city', 'cross'])
 const str = (v, max, fallback = '') => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, max) : fallback)
 const idOf = (v) => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(v) ? v : null)
 const num = (v, min, max, fallback) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback)
